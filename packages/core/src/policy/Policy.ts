@@ -1,6 +1,6 @@
 /**
  * Policy - Schema + defaults for safety guardrails
- * 
+ *
  * Defines allowed repo roots, command allowlist, file size limits,
  * patch size limits, and safe mode toggles.
  */

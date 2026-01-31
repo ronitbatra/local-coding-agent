@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * @local-agent/cli
- * 
+ *
  * CLI entrypoint for the local coding agent.
  */
 
@@ -11,10 +11,7 @@ const pkg = require('../package.json');
 
 const program = new Command();
 
-program
-  .name('agent')
-  .description('Local coding agent - CLI-first assistant')
-  .version(pkg.version);
+program.name('agent').description('Local coding agent - CLI-first assistant').version(pkg.version);
 
 // TODO: Import and register commands
 // import { initCommand } from './commands/init';

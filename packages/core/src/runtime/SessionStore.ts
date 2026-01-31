@@ -1,6 +1,6 @@
 /**
  * SessionStore - JSONL event log per run
- * 
+ *
  * Stores session events in JSONL format for reproducibility and debugging.
  * Each run gets a unique session ID and log file.
  */

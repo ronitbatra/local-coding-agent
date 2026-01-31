@@ -1,6 +1,6 @@
 /**
  * B2: Multi-file refactor benchmark
- * 
+ *
  * Rename function across 3 files.
  * Pass if compiles/tests.
  */

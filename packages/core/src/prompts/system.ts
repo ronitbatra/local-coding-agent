@@ -1,6 +1,6 @@
 /**
  * System prompt template
- * 
+ *
  * Defines the agent's behavior and constraints.
  */
 

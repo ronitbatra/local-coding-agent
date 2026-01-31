@@ -10,7 +10,11 @@ export interface ApplyResult {
   error?: string;
 }
 
-export function applyDiff(diff: UnifiedDiff, repoRoot: string, dryRun = false): Promise<ApplyResult> {
+export function applyDiff(
+  _diff: UnifiedDiff,
+  _repoRoot: string,
+  _dryRun = false
+): Promise<ApplyResult> {
   // TODO: Implement diff application
   return Promise.resolve({ success: false, filesChanged: [], error: 'Not implemented' });
 }

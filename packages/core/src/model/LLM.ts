@@ -1,6 +1,6 @@
 /**
  * LLM - Provider interface
- * 
+ *
  * Abstract interface for model providers.
  * Keeps adapters pluggable.
  */

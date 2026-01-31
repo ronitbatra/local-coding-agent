@@ -1,6 +1,6 @@
 /**
  * AgentRunner - Event-driven loop orchestration
- * 
+ *
  * Coordinates the agent execution loop:
  * - Plan creation
  * - Context gathering

@@ -10,13 +10,15 @@
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "lint": "biome check .",
+    "lint:fix": "biome check --write .",
     "format": "biome format --write .",
+    "format:check": "biome format .",
     "clean": "npm run clean --workspaces && rm -rf node_modules",
     "dev": "npm run dev --workspace=packages/cli",
     "smoke": "npm run smoke --workspace=packages/cli"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.0",
+    "@biomejs/biome": "^2.3.0",
     "typescript": "^5.3.0"
   },
   "engines": {

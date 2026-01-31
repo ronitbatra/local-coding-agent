@@ -9,7 +9,7 @@ export interface GitStatus {
   staged: string[];
 }
 
-export async function getGitStatus(repoRoot: string): Promise<GitStatus | null> {
+export async function getGitStatus(_repoRoot: string): Promise<GitStatus | null> {
   // TODO: Implement git status
   return null;
 }

@@ -19,7 +19,7 @@ export interface DiffHunk {
   lines: string[];
 }
 
-export function parseUnifiedDiff(diff: string): UnifiedDiff {
+export function parseUnifiedDiff(_diff: string): UnifiedDiff {
   // TODO: Implement unified diff parsing
   return { files: [] };
 }

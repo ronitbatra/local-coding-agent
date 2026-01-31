@@ -2,7 +2,7 @@
  * Logger unit tests
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Logger, LogLevel } from '../../src/util/logger';
 
 describe('Logger', () => {

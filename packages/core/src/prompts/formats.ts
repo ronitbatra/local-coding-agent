@@ -1,6 +1,6 @@
 /**
  * Strict JSON / sections contract
- * 
+ *
  * Defines the output format the model must follow.
  */
 
@@ -11,7 +11,7 @@ export interface AgentOutput {
   done?: boolean;
 }
 
-export function parseAgentOutput(text: string): AgentOutput {
+export function parseAgentOutput(_text: string): AgentOutput {
   // TODO: Implement output parsing (strict JSON or section-based)
   return {};
 }

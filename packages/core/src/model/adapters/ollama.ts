@@ -1,10 +1,10 @@
 /**
  * Ollama adapter - First model provider
- * 
+ *
  * Connects to local Ollama server for inference.
  */
 
-import type { LLM, LLMResponse, LLMOptions } from '../LLM';
+import type { LLM, LLMOptions, LLMResponse } from '../LLM';
 
 export interface OllamaConfig {
   baseUrl?: string;
@@ -25,18 +25,21 @@ export class OllamaAdapter implements LLM {
     };
   }
 
-  async complete(prompt: string, options?: LLMOptions): Promise<LLMResponse> {
-    // TODO: Implement Ollama API call
+  async complete(_prompt: string, _options?: LLMOptions): Promise<LLMResponse> {
+    // TODO: Implement Ollama API call using this.config
+    void this.config; // Reference config to satisfy linter until implementation
     throw new Error('Not implemented');
   }
 
-  async *stream(prompt: string, options?: LLMOptions): AsyncIterable<string> {
-    // TODO: Implement streaming
+  async *stream(_prompt: string, _options?: LLMOptions): AsyncIterable<string> {
+    // TODO: Implement streaming using this.config
+    void this.config; // Reference config to satisfy linter until implementation
     yield '';
   }
 
   async checkServer(): Promise<boolean> {
-    // TODO: Check if Ollama server is available
+    // TODO: Check if Ollama server is available using this.config.baseUrl
+    void this.config; // Reference config to satisfy linter until implementation
     return false;
   }
 }

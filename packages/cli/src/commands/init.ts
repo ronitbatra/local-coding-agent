@@ -1,6 +1,6 @@
 /**
  * init command - Initialize agent configuration
- * 
+ *
  * Creates .agent/ folder with policy.json and session directory.
  */
 

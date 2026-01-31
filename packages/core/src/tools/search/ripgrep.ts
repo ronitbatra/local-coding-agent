@@ -8,7 +8,7 @@ export class RipgrepTool implements Tool {
   name = 'search_code';
   description = 'Search code using ripgrep';
 
-  async execute(args: { query: string; path?: string }): Promise<ToolResult<string[]>> {
+  async execute(_args: { query: string; path?: string }): Promise<ToolResult<string[]>> {
     // TODO: Implement ripgrep search
     return { success: false, error: 'Not implemented' };
   }

@@ -1,6 +1,6 @@
 /**
  * Tool interface + gating
- * 
+ *
  * Base interface for all tools. Tools are small, auditable, and policy-gated.
  */
 

@@ -1,6 +1,6 @@
 /**
  * chunk - Chunking for context (v2: embeddings)
- * 
+ *
  * Splits large files into manageable chunks.
  * Future: use embeddings for semantic chunking.
  */
@@ -12,7 +12,7 @@ export interface Chunk {
   content: string;
 }
 
-export function chunkFile(path: string, content: string, maxChunkSize: number): Chunk[] {
+export function chunkFile(_path: string, _content: string, _maxChunkSize: number): Chunk[] {
   // TODO: Implement file chunking
   return [];
 }

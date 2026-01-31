@@ -1,6 +1,6 @@
 /**
  * Policy validation and enforcement
- * 
+ *
  * Validates policy schema and enforces path normalization,
  * command allowlisting, and file size limits.
  */
@@ -12,12 +12,12 @@ export function validatePolicy(policy: unknown): policy is Policy {
   return true;
 }
 
-export function normalizePath(path: string, repoRoot: string): string {
+export function normalizePath(path: string, _repoRoot: string): string {
   // TODO: Implement path normalization (handle symlinks, .., unicode)
   return path;
 }
 
-export function isPathAllowed(path: string, policy: Policy, repoRoot: string): boolean {
+export function isPathAllowed(_path: string, _policy: Policy, _repoRoot: string): boolean {
   // TODO: Implement path allowlist check
   return true;
 }

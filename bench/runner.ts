@@ -1,6 +1,6 @@
 /**
  * Benchmark runner
- * 
+ *
  * Runs all benchmark suites and reports results.
  */
 

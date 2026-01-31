@@ -1,6 +1,6 @@
 /**
  * gather - Retrieval: ripgrep + targeted reads
- * 
+ *
  * Gathers minimal context needed for the agent to work.
  * Keeps context small for 8GB machines.
  */
@@ -10,7 +10,7 @@ export interface Context {
   searchResults: Array<{ path: string; matches: string[] }>;
 }
 
-export async function gatherContext(query: string, repoRoot: string): Promise<Context> {
+export async function gatherContext(_query: string, _repoRoot: string): Promise<Context> {
   // TODO: Implement context gathering
   return { files: [], searchResults: [] };
 }

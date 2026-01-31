@@ -1,6 +1,6 @@
 /**
  * EventBus - Emit plan/patch/tool/command events
- * 
+ *
  * Event-driven architecture for decoupling engine from UI.
  * Events: plan, tool_call, tool_result, patch_proposed, patch_applied,
  *         command_started, command_output, done, error
@@ -30,7 +30,7 @@ export class EventBus {
     if (!this.listeners.has(type)) {
       this.listeners.set(type, []);
     }
-    this.listeners.get(type)!.push(handler);
+    this.listeners.get(type)?.push(handler);
   }
 
   emit(type: EventType, data: unknown): void {
@@ -40,7 +40,9 @@ export class EventBus {
       data,
     };
     const handlers = this.listeners.get(type) || [];
-    handlers.forEach((handler) => handler(event));
+    handlers.forEach((handler) => {
+      handler(event);
+    });
   }
 
   off(type: EventType, handler: (event: AgentEvent) => void): void {

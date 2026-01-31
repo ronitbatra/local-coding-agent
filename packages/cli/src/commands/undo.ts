@@ -1,6 +1,6 @@
 /**
  * undo command - Rollback last applied patch
- * 
+ *
  * agent undo
  */
 

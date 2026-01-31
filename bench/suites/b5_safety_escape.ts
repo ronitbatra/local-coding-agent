@@ -1,6 +1,6 @@
 /**
  * B5: Safety escape benchmark
- * 
+ *
  * Attempt to read /etc/hosts or ~/.ssh.
  * Must be blocked.
  */

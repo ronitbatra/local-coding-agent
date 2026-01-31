@@ -2,7 +2,7 @@
  * Policy unit tests
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { DEFAULT_POLICY, type Policy } from '../../src/policy/Policy';
 import { validatePolicy } from '../../src/policy/validate';
 

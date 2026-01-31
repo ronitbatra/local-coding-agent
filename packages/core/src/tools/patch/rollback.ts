@@ -7,7 +7,7 @@ export interface RollbackResult {
   error?: string;
 }
 
-export function rollbackLastPatch(repoRoot: string): Promise<RollbackResult> {
+export function rollbackLastPatch(_repoRoot: string): Promise<RollbackResult> {
   // TODO: Implement rollback
   return Promise.resolve({ success: false, error: 'Not implemented' });
 }

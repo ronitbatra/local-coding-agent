@@ -1,6 +1,6 @@
 /**
  * doctor command - Check system requirements
- * 
+ *
  * agent doctor
  */
 

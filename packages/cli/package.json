@@ -12,15 +12,18 @@
     "dev": "tsx src/main.ts",
     "test": "vitest",
     "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
     "clean": "rm -rf dist",
     "smoke": "node dist/main.js --version"
   },
   "dependencies": {
-    "@local-agent/core": "workspace:*",
+    "@local-agent/core": "*",
     "commander": "^11.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.0",
+    "@biomejs/biome": "^2.3.0",
     "@types/node": "^20.0.0",
     "typescript": "^5.3.0",
     "tsx": "^4.7.0",
