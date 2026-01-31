@@ -7,7 +7,7 @@
 
 ## Milestone 0 — Repo Bootstrap + Dev Ergonomics
 ### Tasks
-- [ ] Create repo skeleton (`packages/` or `src/`), license, contributing, release notes
+- [x] Create repo skeleton (`packages/` or `src/`), license, contributing, release notes
 - [ ] Add formatter/linter (Biome/ESLint+Prettier or Ruff/Black)
 - [ ] Add unit test runner (Vitest/Jest or Pytest)
 - [ ] Add CI pipeline (GitHub Actions) for lint + tests on macOS/Linux

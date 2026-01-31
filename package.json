@@ -1,0 +1,38 @@
+{
+  "name": "local-coding-agent",
+  "version": "0.1.0",
+  "description": "A CLI-first local coding agent that can safely propose/apply diffs, run allowlisted commands, and iterate using a local model backend",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "clean": "npm run clean --workspaces && rm -rf node_modules",
+    "dev": "npm run dev --workspace=packages/cli",
+    "smoke": "npm run smoke --workspace=packages/cli"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ai",
+    "coding-assistant",
+    "local-ai",
+    "ollama",
+    "code-generation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  }
+}

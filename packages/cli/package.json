@@ -1,0 +1,29 @@
+{
+  "name": "@local-agent/cli",
+  "version": "0.1.0",
+  "description": "CLI wrapper for the local coding agent",
+  "type": "module",
+  "bin": {
+    "agent": "./dist/main.js"
+  },
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/main.ts",
+    "test": "vitest",
+    "lint": "biome check .",
+    "clean": "rm -rf dist",
+    "smoke": "node dist/main.js --version"
+  },
+  "dependencies": {
+    "@local-agent/core": "workspace:*",
+    "commander": "^11.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "tsx": "^4.7.0",
+    "vitest": "^1.0.0"
+  }
+}
