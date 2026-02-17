@@ -5,8 +5,10 @@
  * CLI entrypoint for the local coding agent.
  */
 
+import { createRequire } from 'node:module';
 import { Command } from 'commander';
 
+const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
 
 const program = new Command();
