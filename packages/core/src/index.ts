@@ -12,3 +12,6 @@ export * from './runtime/AgentRunner';
 export * from './runtime/EventBus';
 export * from './runtime/SessionStore';
 export * from './tools/Tool';
+export * from './util/errors';
+export * from './util/logger';
+export * from './util/paths';
