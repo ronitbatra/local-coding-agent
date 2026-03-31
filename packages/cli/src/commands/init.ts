@@ -5,10 +5,16 @@
  */
 
 import { Command } from 'commander';
+import { addJsonOption, createActionHandler } from '../lib/commandHelpers.js';
+import type { CliRuntime } from '../lib/runtime.js';
+import { handleInit } from './shared.js';
 
-export const initCommand = new Command('init')
-  .description('Initialize agent configuration in current repository')
-  .action(async () => {
-    // TODO: Implement init command
-    console.log('Init command not yet implemented');
-  });
+export function createInitCommand(runtime: CliRuntime): Command {
+  return addJsonOption(
+    new Command('init').description('Initialize agent configuration in current repository').action(
+      createActionHandler(runtime, async () => {
+        return handleInit(runtime.cwd);
+      })
+    )
+  );
+}
