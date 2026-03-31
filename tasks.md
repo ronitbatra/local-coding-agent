@@ -22,15 +22,15 @@
 
 ## Milestone 1 — CLI UX + Command Routing (No AI Yet)
 ### Tasks
-- [ ] CLI command structure
-  - [ ] `agent init`
-  - [ ] `agent ask "<task>"`
-  - [ ] `agent apply`
-  - [ ] `agent test`
-  - [ ] `agent undo`
-  - [ ] `agent status`
-- [ ] Config discovery (repo root detection, `.agent/` folder creation)
-- [ ] Structured output format (human-readable + optional `--json`)
+- [x] CLI command structure
+  - [x] `agent init`
+  - [x] `agent ask "<task>"`
+  - [x] `agent apply`
+  - [x] `agent test`
+  - [x] `agent undo`
+  - [x] `agent status`
+- [x] Config discovery (repo root detection, `.agent/` folder creation)
+- [x] Structured output format (human-readable + optional `--json`)
 
 ### Benchmarks / Tests
 - **Unit:** argument parsing for each command (happy path + invalid args)

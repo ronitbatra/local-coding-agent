@@ -6,30 +6,18 @@
  */
 
 import { createRequire } from 'node:module';
-import { Command } from 'commander';
+import { fileURLToPath } from 'node:url';
+import { createProgram } from './app.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
 
-const program = new Command();
+export { createProgram } from './app.js';
 
-program.name('agent').description('Local coding agent - CLI-first assistant').version(pkg.version);
+const isEntrypoint = process.argv[1] === fileURLToPath(import.meta.url);
 
-// TODO: Import and register commands
-// import { initCommand } from './commands/init';
-// import { askCommand } from './commands/ask';
-// import { applyCommand } from './commands/apply';
-// import { testCommand } from './commands/test';
-// import { undoCommand } from './commands/undo';
-// import { statusCommand } from './commands/status';
-// import { doctorCommand } from './commands/doctor';
-
-// program.addCommand(initCommand);
-// program.addCommand(askCommand);
-// program.addCommand(applyCommand);
-// program.addCommand(testCommand);
-// program.addCommand(undoCommand);
-// program.addCommand(statusCommand);
-// program.addCommand(doctorCommand);
-
-program.parse();
+if (isEntrypoint) {
+  const program = createProgram();
+  program.version(pkg.version);
+  await program.parseAsync(process.argv);
+}

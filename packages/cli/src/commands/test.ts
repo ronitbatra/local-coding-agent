@@ -5,10 +5,16 @@
  */
 
 import { Command } from 'commander';
+import { addJsonOption, createActionHandler } from '../lib/commandHelpers.js';
+import type { CliRuntime } from '../lib/runtime.js';
+import { handleTest } from './shared.js';
 
-export const testCommand = new Command('test')
-  .description('Run allowlisted test commands')
-  .action(async () => {
-    // TODO: Implement test command
-    console.log('Test command not yet implemented');
-  });
+export function createTestCommand(runtime: CliRuntime): Command {
+  return addJsonOption(
+    new Command('test').description('Run allowlisted test commands').action(
+      createActionHandler(runtime, async () => {
+        return handleTest(runtime.cwd);
+      })
+    )
+  );
+}

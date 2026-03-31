@@ -5,10 +5,18 @@
  */
 
 import { Command } from 'commander';
+import { addJsonOption, createActionHandler } from '../lib/commandHelpers.js';
+import type { CliRuntime } from '../lib/runtime.js';
+import { handleDoctor } from './shared.js';
 
-export const doctorCommand = new Command('doctor')
-  .description('Check system requirements (git, ripgrep, ollama, etc.)')
-  .action(async () => {
-    // TODO: Implement doctor command
-    console.log('Doctor command not yet implemented');
-  });
+export function createDoctorCommand(runtime: CliRuntime): Command {
+  return addJsonOption(
+    new Command('doctor')
+      .description('Check system requirements (git, ripgrep, ollama, etc.)')
+      .action(
+        createActionHandler(runtime, async () => {
+          return handleDoctor(runtime.cwd);
+        })
+      )
+  );
+}

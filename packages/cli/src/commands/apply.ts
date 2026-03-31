@@ -5,11 +5,24 @@
  */
 
 import { Command } from 'commander';
+import { addJsonOption, createActionHandler } from '../lib/commandHelpers.js';
+import type { CliRuntime } from '../lib/runtime.js';
+import { handleApply } from './shared.js';
 
-export const applyCommand = new Command('apply')
-  .description('Apply the last proposed patch')
-  .option('--yes', 'Skip confirmation prompt')
-  .action(async (_options: { yes?: boolean }) => {
-    // TODO: Implement apply command
-    console.log('Apply command not yet implemented');
-  });
+interface ApplyOptions {
+  yes?: boolean;
+  json?: boolean;
+}
+
+export function createApplyCommand(runtime: CliRuntime): Command {
+  return addJsonOption(
+    new Command('apply')
+      .description('Apply the last proposed patch')
+      .option('--yes', 'Skip confirmation prompt')
+      .action(
+        createActionHandler(runtime, async (_options: ApplyOptions) => {
+          return handleApply(runtime.cwd);
+        })
+      )
+  );
+}

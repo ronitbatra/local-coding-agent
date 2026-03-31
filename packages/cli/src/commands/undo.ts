@@ -5,10 +5,16 @@
  */
 
 import { Command } from 'commander';
+import { addJsonOption, createActionHandler } from '../lib/commandHelpers.js';
+import type { CliRuntime } from '../lib/runtime.js';
+import { handleUndo } from './shared.js';
 
-export const undoCommand = new Command('undo')
-  .description('Rollback the last applied patch')
-  .action(async () => {
-    // TODO: Implement undo command
-    console.log('Undo command not yet implemented');
-  });
+export function createUndoCommand(runtime: CliRuntime): Command {
+  return addJsonOption(
+    new Command('undo').description('Rollback the last applied patch').action(
+      createActionHandler(runtime, async () => {
+        return handleUndo(runtime.cwd);
+      })
+    )
+  );
+}
