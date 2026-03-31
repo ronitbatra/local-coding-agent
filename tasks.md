@@ -10,8 +10,8 @@
 - [x] Create repo skeleton (`packages/` or `src/`), license, contributing, release notes
 - [x] Add formatter/linter (Biome/ESLint+Prettier or Ruff/Black)
 - [x] Add unit test runner (Vitest/Jest or Pytest)
-- [ ] Add CI pipeline (GitHub Actions) for lint + tests on macOS/Linux
-- [ ] Add basic logging utility + log levels
+- [x] Add CI pipeline (GitHub Actions) for lint + tests on macOS/Linux
+- [x] Add basic logging utility + log levels
 
 ### Benchmarks / Tests
 - **CI green:** lint + unit tests pass on macOS + Linux
@@ -227,4 +227,3 @@ Create a `bench/` folder with repeatable fixtures.
 - The model **never writes files directly**; only proposes patches.
 - Keep context small; rely on retrieval (especially for 8GB machines).
 - Ollama is the default provider; keep adapters pluggable.
-

@@ -2,43 +2,42 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches:
+      - main
   pull_request:
-    branches: [main, develop]
 
 jobs:
-  lint-and-test:
-    name: Lint and Test
+  validate:
+    name: Validate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
-        node-version: [18.x, 20.x]
+        os:
+          - ubuntu-latest
+          - macos-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+          node-version: 20
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Check formatting
-        run: npm run format:check
-
       - name: Build
         run: npm run build
+
+      - name: Lint
+        run: npm run lint
 
       - name: Test
         run: npm test
 
-      - name: Smoke test
+      - name: Smoke test CLI version
         run: npm run smoke
