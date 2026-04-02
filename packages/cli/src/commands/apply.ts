@@ -20,8 +20,8 @@ export function createApplyCommand(runtime: CliRuntime): Command {
       .description('Apply the last proposed patch')
       .option('--yes', 'Skip confirmation prompt')
       .action(
-        createActionHandler(runtime, async (_options: ApplyOptions) => {
-          return handleApply(runtime.cwd);
+        createActionHandler(runtime, async (options: ApplyOptions) => {
+          return handleApply(runtime, options);
         })
       )
   );

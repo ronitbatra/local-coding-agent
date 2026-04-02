@@ -72,7 +72,7 @@ npm run build
 
 ## Milestones
 
-See [tasks.md](tasks.md) for the complete milestone breakdown. Currently working on **Milestone 0** (Repo Bootstrap + Dev Ergonomics).
+See [tasks.md](tasks.md) for the complete milestone breakdown. Currently working on **Milestone 2** (Policy + Safety Guardrails).
 
 ## License
 
