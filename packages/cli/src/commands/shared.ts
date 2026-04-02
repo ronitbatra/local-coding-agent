@@ -8,6 +8,38 @@ import {
 } from '../lib/agentFs.js';
 import { CliCommandError } from '../lib/commandHelpers.js';
 import type { CommandResult } from '../lib/output.js';
+import { loadAgentPolicy, pickAllowedTestCommand } from '../lib/policy.js';
+import type { CliRuntime } from '../lib/runtime.js';
+import { confirmApply, confirmCommand } from '../ui/prompts.js';
+
+interface ConfirmationOptions {
+  yes?: boolean;
+}
+
+async function requireInteractiveConfirmation(
+  runtime: CliRuntime,
+  options: ConfirmationOptions,
+  needsConfirmation: boolean,
+  prompt: () => Promise<boolean>,
+  description: string
+): Promise<void> {
+  if (!needsConfirmation || options.yes) {
+    return;
+  }
+
+  if (!runtime.io.isInteractive) {
+    throw new CliCommandError(
+      `Confirmation required before ${description}, but no TTY is available. Re-run with --yes or update policy.json.`
+    );
+  }
+
+  const confirmed = await prompt();
+  if (!confirmed) {
+    throw new CliCommandError(`Aborted ${description}.`, 1, {
+      confirmed: false,
+    });
+  }
+}
 
 export async function handleInit(cwd: string): Promise<CommandResult> {
   const repoRoot = resolveInitRoot(cwd);
@@ -70,8 +102,11 @@ export async function handleAsk(
   };
 }
 
-export async function handleApply(cwd: string): Promise<CommandResult> {
-  const repoRoot = resolveRepoRoot(cwd);
+export async function handleApply(
+  runtime: CliRuntime,
+  options: ConfirmationOptions
+): Promise<CommandResult> {
+  const repoRoot = resolveRepoRoot(runtime.cwd);
   if (!repoRoot) {
     throw new CliCommandError(
       'No repository root found. Run `agent init` from your project first.'
@@ -85,6 +120,11 @@ export async function handleApply(cwd: string): Promise<CommandResult> {
     );
   }
 
+  const policy = await loadAgentPolicy(repoRoot);
+  if (policy.safeMode.readOnly) {
+    throw new CliCommandError('Policy blocks patch application because safeMode.readOnly is true.');
+  }
+
   const state = await readAgentState(repoRoot);
   if (!state.lastProposedPatchPath) {
     throw new CliCommandError(
@@ -92,8 +132,18 @@ export async function handleApply(cwd: string): Promise<CommandResult> {
     );
   }
 
+  const pendingPatchPath = state.lastProposedPatchPath;
+
+  await requireInteractiveConfirmation(
+    runtime,
+    options,
+    policy.safeMode.confirmApply,
+    async () => confirmApply(runtime.io, [path.basename(pendingPatchPath)]),
+    'applying the pending patch'
+  );
+
   throw new CliCommandError('Patch application is implemented in Milestone 3.', 1, {
-    pendingPatch: state.lastProposedPatchPath,
+    pendingPatch: pendingPatchPath,
   });
 }
 
@@ -119,18 +169,56 @@ export async function handleStatus(cwd: string): Promise<CommandResult> {
   };
 }
 
-export async function handleTest(cwd: string): Promise<CommandResult> {
-  const repoRoot = resolveRepoRoot(cwd);
+export async function handleTest(
+  runtime: CliRuntime,
+  options: ConfirmationOptions
+): Promise<CommandResult> {
+  const repoRoot = resolveRepoRoot(runtime.cwd);
   if (!repoRoot) {
     throw new CliCommandError(
       'No repository root found. Run `agent init` from your project first.'
     );
   }
 
+  const status = await getAgentStatus(repoRoot);
+  if (!status.initialized) {
+    throw new CliCommandError(
+      'Agent is not initialized in this repository. Run `agent init` first.'
+    );
+  }
+
+  const policy = await loadAgentPolicy(repoRoot);
+  const selectedCommand = pickAllowedTestCommand(policy);
+
+  if (!selectedCommand) {
+    throw new CliCommandError(
+      'No allowlisted test command is configured. Update .agent/policy.json first.'
+    );
+  }
+
+  const commandToRun = selectedCommand;
+
+  await requireInteractiveConfirmation(
+    runtime,
+    options,
+    policy.safeMode.confirmCommands,
+    async () => confirmCommand(runtime.io, commandToRun),
+    `running "${commandToRun}"`
+  );
+
   return {
     ok: true,
-    message: 'Test command routing is wired. Command execution arrives in Milestone 7.',
-    data: { repoRoot },
+    message: 'Policy checks passed. Command execution arrives in Milestone 7.',
+    data: {
+      repoRoot,
+      command: commandToRun,
+      confirmed: !policy.safeMode.confirmCommands || options.yes || runtime.io.isInteractive,
+    },
+    human: [
+      'Policy checks passed.',
+      `Selected test command: ${commandToRun}`,
+      'Command execution arrives in Milestone 7.',
+    ],
   };
 }
 

@@ -2,7 +2,7 @@
  * CLI commands unit tests
  */
 
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -25,7 +25,47 @@ async function createTempRepo(): Promise<string> {
   return directory;
 }
 
-function createBufferedRuntime(cwd: string): BufferedRuntime {
+async function initializeRepo(cwd: string): Promise<void> {
+  await mkdir(path.join(cwd, '.agent', 'patches'), { recursive: true });
+  await mkdir(path.join(cwd, '.agent', 'sessions'), { recursive: true });
+}
+
+async function writePolicy(
+  cwd: string,
+  overrides: Record<string, unknown> = {},
+  safeModeOverrides: Record<string, unknown> = {}
+): Promise<void> {
+  const policy = {
+    allowedRepoRoots: [cwd],
+    commandAllowlist: [],
+    maxFileSize: 1024 * 1024,
+    maxPatchSize: 100 * 1024,
+    maxFilesChanged: 50,
+    safeMode: {
+      readOnly: false,
+      confirmApply: true,
+      confirmCommands: true,
+      ...safeModeOverrides,
+    },
+    ...overrides,
+  };
+
+  await writeFile(
+    path.join(cwd, '.agent', 'policy.json'),
+    `${JSON.stringify(policy, null, 2)}\n`,
+    'utf8'
+  );
+}
+
+async function writeState(cwd: string, state: Record<string, unknown>): Promise<void> {
+  await writeFile(
+    path.join(cwd, '.agent', 'state.json'),
+    `${JSON.stringify(state, null, 2)}\n`,
+    'utf8'
+  );
+}
+
+function createBufferedRuntime(cwd: string, isInteractive = false): BufferedRuntime {
   const stdout: string[] = [];
   const stderr: string[] = [];
 
@@ -41,6 +81,9 @@ function createBufferedRuntime(cwd: string): BufferedRuntime {
       stderr: (message: string) => {
         stderr.push(message);
       },
+      input: process.stdin,
+      output: process.stdout,
+      isInteractive,
     },
     setExitCode: (code: number) => {
       runtime.exitCode = code;
@@ -80,7 +123,7 @@ describe('CLI commands', () => {
       exitCode: 0,
     });
     await expect(parseCommand(['apply', '--yes'], cwd)).resolves.toMatchObject({ exitCode: 1 });
-    await expect(parseCommand(['test'], cwd)).resolves.toMatchObject({ exitCode: 0 });
+    await expect(parseCommand(['test'], cwd)).resolves.toMatchObject({ exitCode: 1 });
     await expect(parseCommand(['undo'], cwd)).resolves.toMatchObject({ exitCode: 0 });
     await expect(parseCommand(['status', '--json'], cwd)).resolves.toMatchObject({ exitCode: 0 });
     await expect(parseCommand(['doctor'], cwd)).resolves.toMatchObject({ exitCode: 0 });
@@ -155,5 +198,75 @@ describe('CLI commands', () => {
 
     expect(runtime.exitCode).toBe(1);
     expect(runtime.stderr.join('\n')).toContain('No patch is currently queued.');
+  });
+
+  it('blocks apply in read-only mode before Milestone 3 execution', async () => {
+    const cwd = await createTempRepo();
+    await initializeRepo(cwd);
+    await writePolicy(cwd, {}, { readOnly: true });
+    await writeState(cwd, {
+      lastProposedPatchPath: path.join(cwd, '.agent', 'patches', 'last-proposed.patch'),
+      lastAppliedPatchPath: null,
+    });
+
+    const runtime = await parseCommand(['apply', '--yes'], cwd);
+
+    expect(runtime.exitCode).toBe(1);
+    expect(runtime.stderr.join('\n')).toContain('safeMode.readOnly');
+  });
+
+  it('requires explicit confirmation for apply in non-interactive mode', async () => {
+    const cwd = await createTempRepo();
+    await initializeRepo(cwd);
+    await writePolicy(cwd);
+    await writeState(cwd, {
+      lastProposedPatchPath: path.join(cwd, '.agent', 'patches', 'last-proposed.patch'),
+      lastAppliedPatchPath: null,
+    });
+
+    const runtime = await parseCommand(['apply'], cwd);
+
+    expect(runtime.exitCode).toBe(1);
+    expect(runtime.stderr.join('\n')).toContain('Re-run with --yes');
+  });
+
+  it('denies test command execution when nothing is allowlisted', async () => {
+    const cwd = await createTempRepo();
+    await parseCommand(['init'], cwd);
+
+    const runtime = await parseCommand(['test'], cwd);
+
+    expect(runtime.exitCode).toBe(1);
+    expect(runtime.stderr.join('\n')).toContain('No allowlisted test command');
+  });
+
+  it('requires explicit confirmation for allowlisted test commands in non-interactive mode', async () => {
+    const cwd = await createTempRepo();
+    await initializeRepo(cwd);
+    await writePolicy(cwd, { commandAllowlist: ['npm test'] });
+    await writeState(cwd, {
+      lastProposedPatchPath: null,
+      lastAppliedPatchPath: null,
+    });
+
+    const runtime = await parseCommand(['test'], cwd);
+
+    expect(runtime.exitCode).toBe(1);
+    expect(runtime.stderr.join('\n')).toContain('Re-run with --yes');
+  });
+
+  it('allows non-interactive test routing when --yes is explicit', async () => {
+    const cwd = await createTempRepo();
+    await initializeRepo(cwd);
+    await writePolicy(cwd, { commandAllowlist: ['npm test'] });
+    await writeState(cwd, {
+      lastProposedPatchPath: null,
+      lastAppliedPatchPath: null,
+    });
+
+    const runtime = await parseCommand(['test', '--yes'], cwd);
+
+    expect(runtime.exitCode).toBe(0);
+    expect(runtime.stdout.join('\n')).toContain('Selected test command: npm test');
   });
 });
