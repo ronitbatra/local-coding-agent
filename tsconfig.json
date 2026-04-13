@@ -1,9 +1,13 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
     "target": "ES2022",
     "module": "ESNext",
     "lib": ["ES2022"],
     "moduleResolution": "bundler",
+    "paths": {
+      "@local-agent/core": ["packages/core/src/index.ts"]
+    },
     "resolveJsonModule": true,
     "allowJs": true,
     "strict": true,

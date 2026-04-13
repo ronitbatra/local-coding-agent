@@ -215,6 +215,23 @@ describe('CLI commands', () => {
     expect(runtime.stderr.join('\n')).toContain('safeMode.readOnly');
   });
 
+  it('blocks apply when the queued patch exceeds maxPatchSize', async () => {
+    const cwd = await createTempRepo();
+    await initializeRepo(cwd);
+    await writePolicy(cwd, { maxPatchSize: 4 });
+    const patchPath = path.join(cwd, '.agent', 'patches', 'last-proposed.patch');
+    await writeFile(patchPath, '12345\n', 'utf8');
+    await writeState(cwd, {
+      lastProposedPatchPath: patchPath,
+      lastAppliedPatchPath: null,
+    });
+
+    const runtime = await parseCommand(['apply', '--yes'], cwd);
+
+    expect(runtime.exitCode).toBe(1);
+    expect(runtime.stderr.join('\n')).toContain('exceeds maxPatchSize');
+  });
+
   it('requires explicit confirmation for apply in non-interactive mode', async () => {
     const cwd = await createTempRepo();
     await initializeRepo(cwd);
@@ -268,5 +285,15 @@ describe('CLI commands', () => {
 
     expect(runtime.exitCode).toBe(0);
     expect(runtime.stdout.join('\n')).toContain('Selected test command: npm test');
+  });
+
+  it('reports --no-apply intent in ask output', async () => {
+    const cwd = await createTempRepo();
+    await parseCommand(['init'], cwd);
+
+    const runtime = await parseCommand(['ask', 'update docs', '--no-apply'], cwd);
+
+    expect(runtime.exitCode).toBe(0);
+    expect(runtime.stdout.join('\n')).toContain('Apply: disabled via --no-apply');
   });
 });

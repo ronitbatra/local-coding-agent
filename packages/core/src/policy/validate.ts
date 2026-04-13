@@ -7,7 +7,7 @@
 
 import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
-import type { Policy } from './Policy';
+import { DEFAULT_POLICY, type Policy } from './Policy';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -99,6 +99,26 @@ export function validatePolicy(policy: unknown): policy is Policy {
   );
 }
 
+export function normalizePolicy(policy: unknown, repoRoot: string): Policy {
+  if (!validatePolicy(policy)) {
+    throw new Error('Policy does not match the expected schema.');
+  }
+
+  return {
+    ...DEFAULT_POLICY,
+    ...policy,
+    allowedRepoRoots:
+      policy.allowedRepoRoots.length > 0
+        ? policy.allowedRepoRoots.map((entry) => resolvePolicyPath(entry, repoRoot))
+        : [resolvePolicyPath(repoRoot, repoRoot)],
+    commandAllowlist: policy.commandAllowlist.map((entry) => entry.trim()).filter(Boolean),
+    safeMode: {
+      ...DEFAULT_POLICY.safeMode,
+      ...policy.safeMode,
+    },
+  };
+}
+
 export function normalizePath(targetPath: string, repoRoot: string): string {
   return resolvePolicyPath(targetPath, repoRoot);
 }
@@ -130,4 +150,104 @@ export function isCommandAllowed(command: string, policy: Policy): boolean {
     const trimmedAllowedCommand = allowedCommand.trim();
     return trimmedAllowedCommand === executable || trimmedAllowedCommand === trimmedCommand;
   });
+}
+
+export type PolicyOperation =
+  | {
+      kind: 'read';
+      targetPath: string;
+      fileSize?: number;
+    }
+  | {
+      kind: 'apply';
+      targetPath: string;
+      patchSize?: number;
+      filesChanged?: number;
+    }
+  | {
+      kind: 'command';
+      command: string;
+    };
+
+export interface PolicyDecision {
+  allowed: boolean;
+  requiresConfirmation: boolean;
+  normalizedTargetPath?: string;
+  reasons: string[];
+}
+
+export function evaluatePolicyOperation(
+  operation: PolicyOperation,
+  policy: Policy,
+  repoRoot: string
+): PolicyDecision {
+  const reasons: string[] = [];
+
+  if (operation.kind === 'command') {
+    if (!isCommandAllowed(operation.command, policy)) {
+      reasons.push(`Command "${operation.command}" is not in commandAllowlist.`);
+    }
+
+    return {
+      allowed: reasons.length === 0,
+      requiresConfirmation: policy.safeMode.confirmCommands,
+      reasons,
+    };
+  }
+
+  const normalizedTargetPath = normalizePath(operation.targetPath, repoRoot);
+
+  if (!isPathAllowed(normalizedTargetPath, policy, repoRoot)) {
+    reasons.push(`Path "${operation.targetPath}" resolves outside allowedRepoRoots.`);
+  }
+
+  if (operation.kind === 'read') {
+    if (
+      typeof operation.fileSize === 'number' &&
+      Number.isFinite(operation.fileSize) &&
+      operation.fileSize > policy.maxFileSize
+    ) {
+      reasons.push(
+        `File size ${operation.fileSize} bytes exceeds maxFileSize ${policy.maxFileSize} bytes.`
+      );
+    }
+
+    return {
+      allowed: reasons.length === 0,
+      requiresConfirmation: false,
+      normalizedTargetPath,
+      reasons,
+    };
+  }
+
+  if (policy.safeMode.readOnly) {
+    reasons.push('Patch application is blocked because safeMode.readOnly is true.');
+  }
+
+  if (
+    typeof operation.patchSize === 'number' &&
+    Number.isFinite(operation.patchSize) &&
+    operation.patchSize > policy.maxPatchSize
+  ) {
+    reasons.push(
+      `Patch size ${operation.patchSize} bytes exceeds maxPatchSize ${policy.maxPatchSize} bytes.`
+    );
+  }
+
+  if (
+    typeof operation.filesChanged === 'number' &&
+    Number.isFinite(operation.filesChanged) &&
+    operation.filesChanged > policy.maxFilesChanged
+  ) {
+    reasons.push(
+      `Patch changes ${operation.filesChanged} files, exceeding maxFilesChanged ${policy.maxFilesChanged}.`
+    );
+  }
+
+  return {
+    allowed: reasons.length === 0,
+    requiresConfirmation: policy.safeMode.confirmApply,
+    normalizedTargetPath,
+    reasons,
+  };
 }

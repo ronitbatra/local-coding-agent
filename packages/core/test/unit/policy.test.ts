@@ -8,8 +8,10 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_POLICY, type Policy } from '../../src/policy/Policy';
 import {
+  evaluatePolicyOperation,
   isCommandAllowed,
   isPathAllowed,
+  normalizePolicy,
   normalizePath,
   validatePolicy,
 } from '../../src/policy/validate';
@@ -43,6 +45,21 @@ describe('Policy', () => {
         },
       })
     ).toBe(false);
+  });
+
+  it('normalizes policy defaults relative to repo root', async () => {
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), 'policy-normalize-'));
+    const normalized = normalizePolicy(
+      {
+        ...DEFAULT_POLICY,
+        allowedRepoRoots: [],
+        commandAllowlist: [' npm test ', ''],
+      },
+      repoRoot
+    );
+
+    expect(normalized.allowedRepoRoots).toEqual([normalizePath('.', repoRoot)]);
+    expect(normalized.commandAllowlist).toEqual(['npm test']);
   });
 
   it('denies paths outside the allowed repo root', async () => {
@@ -86,6 +103,34 @@ describe('Policy', () => {
     expect(normalizePath(path.join(decomposed, 'file.ts'), repoRoot)).toBe(expectedPath);
   });
 
+  it('rejects path escape variants during policy evaluation', async () => {
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), 'policy-escape-'));
+    const policy: Policy = {
+      ...DEFAULT_POLICY,
+      allowedRepoRoots: [repoRoot],
+    };
+
+    const escapeAttempts = [
+      `..${path.sep}secrets.txt`,
+      path.join(repoRoot, 'nested', '..', '..', 'secrets.txt'),
+      `${repoRoot}${path.sep}nested${path.sep}..${path.sep}..${path.sep}secrets.txt`,
+    ];
+
+    for (const targetPath of escapeAttempts) {
+      const decision = evaluatePolicyOperation(
+        {
+          kind: 'read',
+          targetPath,
+        },
+        policy,
+        repoRoot
+      );
+
+      expect(decision.allowed).toBe(false);
+      expect(decision.reasons[0]).toContain('outside allowedRepoRoots');
+    }
+  });
+
   it('requires explicit command allowlisting', () => {
     const policy: Policy = {
       ...DEFAULT_POLICY,
@@ -96,5 +141,38 @@ describe('Policy', () => {
     expect(isCommandAllowed('vitest run', policy)).toBe(true);
     expect(isCommandAllowed('npm run build', policy)).toBe(false);
     expect(isCommandAllowed('pytest', DEFAULT_POLICY)).toBe(false);
+  });
+
+  it('blocks policy-gated apply operations that exceed configured limits', async () => {
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), 'policy-apply-'));
+    const policy: Policy = {
+      ...DEFAULT_POLICY,
+      allowedRepoRoots: [repoRoot],
+      maxPatchSize: 10,
+      maxFilesChanged: 1,
+      safeMode: {
+        ...DEFAULT_POLICY.safeMode,
+        readOnly: true,
+      },
+    };
+
+    const decision = evaluatePolicyOperation(
+      {
+        kind: 'apply',
+        targetPath: path.join(repoRoot, '.agent', 'patches', 'last.patch'),
+        patchSize: 20,
+        filesChanged: 2,
+      },
+      policy,
+      repoRoot
+    );
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.requiresConfirmation).toBe(true);
+    expect(decision.reasons).toEqual([
+      'Patch application is blocked because safeMode.readOnly is true.',
+      'Patch size 20 bytes exceeds maxPatchSize 10 bytes.',
+      'Patch changes 2 files, exceeding maxFilesChanged 1.',
+    ]);
   });
 });

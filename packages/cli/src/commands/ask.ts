@@ -10,6 +10,7 @@ import type { CliRuntime } from '../lib/runtime.js';
 import { handleAsk } from './shared.js';
 
 interface AskOptions {
+  apply?: boolean;
   dryRun?: boolean;
   noApply?: boolean;
   json?: boolean;
@@ -24,7 +25,10 @@ export function createAskCommand(runtime: CliRuntime): Command {
       .option('--no-apply', 'Do not apply patches automatically')
       .action(async (task: string, options: AskOptions, command: Command): Promise<void> => {
         return createActionHandler(runtime, async (innerOptions: AskOptions) => {
-          return handleAsk(runtime.cwd, task, innerOptions);
+          return handleAsk(runtime.cwd, task, {
+            ...innerOptions,
+            noApply: innerOptions.apply === false,
+          });
         })(options, command);
       })
   );
