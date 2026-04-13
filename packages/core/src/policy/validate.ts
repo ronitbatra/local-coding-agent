@@ -7,7 +7,7 @@
 
 import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_POLICY, type Policy } from './Policy';
+import { DEFAULT_POLICY, type Policy } from './Policy.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

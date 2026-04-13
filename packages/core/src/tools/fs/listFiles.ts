@@ -2,7 +2,7 @@
  * listFiles tool - List files matching glob pattern
  */
 
-import type { Tool, ToolResult } from '../Tool';
+import type { Tool, ToolResult } from '../Tool.js';
 
 export class ListFilesTool implements Tool {
   name = 'list_files';

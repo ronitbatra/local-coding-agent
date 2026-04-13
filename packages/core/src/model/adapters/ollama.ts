@@ -4,7 +4,7 @@
  * Connects to local Ollama server for inference.
  */
 
-import type { LLM, LLMOptions, LLMResponse } from '../LLM';
+import type { LLM, LLMOptions, LLMResponse } from '../LLM.js';
 
 export interface OllamaConfig {
   baseUrl?: string;

@@ -11,8 +11,8 @@ import {
   evaluatePolicyOperation,
   isCommandAllowed,
   isPathAllowed,
-  normalizePolicy,
   normalizePath,
+  normalizePolicy,
   validatePolicy,
 } from '../../src/policy/validate';
 
