@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { DEFAULT_POLICY } from '@local-agent/core';
+import { DEFAULT_POLICY, type PatchApplicationMetadata } from '@local-agent/core';
 
 const AGENT_DIRNAME = '.agent';
 const POLICY_FILENAME = 'policy.json';
@@ -9,10 +9,18 @@ const STATE_FILENAME = 'state.json';
 const SESSIONS_DIRNAME = 'sessions';
 const PATCHES_DIRNAME = 'patches';
 const LAST_PATCH_FILENAME = 'last-proposed.patch';
+const LAST_APPLIED_PATCH_FILENAME = 'last-applied.patch';
+const LAST_APPLIED_REVERSE_PATCH_FILENAME = 'last-applied.reverse.patch';
+const LAST_APPLIED_METADATA_FILENAME = 'last-applied.json';
 
 interface AgentState {
   lastProposedPatchPath: string | null;
   lastAppliedPatchPath: string | null;
+}
+
+export interface AppliedPatchRecord extends PatchApplicationMetadata {
+  patchPath: string;
+  reversePatchPath: string;
 }
 
 export interface AgentPaths {
@@ -23,6 +31,9 @@ export interface AgentPaths {
   patchesDir: string;
   statePath: string;
   lastPatchPath: string;
+  lastAppliedPatchPath: string;
+  lastAppliedReversePatchPath: string;
+  lastAppliedMetadataPath: string;
 }
 
 export interface AgentStatus {
@@ -33,6 +44,7 @@ export interface AgentStatus {
   sessionsDirExists: boolean;
   patchesDirExists: boolean;
   pendingPatch: string | null;
+  lastAppliedPatch: string | null;
 }
 
 const DEFAULT_STATE: AgentState = {
@@ -78,6 +90,24 @@ export function getAgentPaths(repoRoot: string): AgentPaths {
     patchesDir: path.join(agentDir, PATCHES_DIRNAME),
     statePath: path.join(agentDir, STATE_FILENAME),
     lastPatchPath: path.join(repoRoot, AGENT_DIRNAME, PATCHES_DIRNAME, LAST_PATCH_FILENAME),
+    lastAppliedPatchPath: path.join(
+      repoRoot,
+      AGENT_DIRNAME,
+      PATCHES_DIRNAME,
+      LAST_APPLIED_PATCH_FILENAME
+    ),
+    lastAppliedReversePatchPath: path.join(
+      repoRoot,
+      AGENT_DIRNAME,
+      PATCHES_DIRNAME,
+      LAST_APPLIED_REVERSE_PATCH_FILENAME
+    ),
+    lastAppliedMetadataPath: path.join(
+      repoRoot,
+      AGENT_DIRNAME,
+      PATCHES_DIRNAME,
+      LAST_APPLIED_METADATA_FILENAME
+    ),
   };
 }
 
@@ -119,6 +149,77 @@ export async function readAgentState(repoRoot: string): Promise<AgentState> {
   };
 }
 
+export async function writeAgentState(
+  repoRoot: string,
+  state: Partial<AgentState>
+): Promise<AgentState> {
+  const { statePath } = getAgentPaths(repoRoot);
+  const nextState = {
+    ...(await readAgentState(repoRoot)),
+    ...state,
+  };
+
+  await writeFile(statePath, `${JSON.stringify(nextState, null, 2)}\n`, 'utf8');
+  return nextState;
+}
+
+export async function recordAppliedPatch(
+  repoRoot: string,
+  proposedPatchPath: string,
+  metadata: PatchApplicationMetadata
+): Promise<AppliedPatchRecord> {
+  const paths = getAgentPaths(repoRoot);
+  const reversePatch = metadata.files
+    .map((file) => file.reversePatch)
+    .join('\n')
+    .trim();
+
+  await copyFile(proposedPatchPath, paths.lastAppliedPatchPath);
+  await writeFile(
+    paths.lastAppliedReversePatchPath,
+    reversePatch.length > 0 ? `${reversePatch}\n` : '',
+    'utf8'
+  );
+
+  const record: AppliedPatchRecord = {
+    ...metadata,
+    patchPath: paths.lastAppliedPatchPath,
+    reversePatchPath: paths.lastAppliedReversePatchPath,
+  };
+
+  await writeFile(paths.lastAppliedMetadataPath, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+  await writeAgentState(repoRoot, {
+    lastAppliedPatchPath: paths.lastAppliedPatchPath,
+    lastProposedPatchPath: null,
+  });
+
+  return record;
+}
+
+export async function readAppliedPatchRecord(repoRoot: string): Promise<AppliedPatchRecord | null> {
+  const paths = getAgentPaths(repoRoot);
+  if (!existsSync(paths.lastAppliedMetadataPath)) {
+    return null;
+  }
+
+  const content = await readFile(paths.lastAppliedMetadataPath, 'utf8');
+  return JSON.parse(content) as AppliedPatchRecord;
+}
+
+export async function clearAppliedPatchRecord(repoRoot: string): Promise<void> {
+  const paths = getAgentPaths(repoRoot);
+
+  await Promise.all([
+    rm(paths.lastAppliedPatchPath, { force: true }),
+    rm(paths.lastAppliedReversePatchPath, { force: true }),
+    rm(paths.lastAppliedMetadataPath, { force: true }),
+  ]);
+
+  await writeAgentState(repoRoot, {
+    lastAppliedPatchPath: null,
+  });
+}
+
 export async function getAgentStatus(startPath: string): Promise<AgentStatus> {
   const repoRoot = resolveRepoRoot(startPath) ?? path.resolve(startPath);
   const paths = getAgentPaths(repoRoot);
@@ -135,6 +236,10 @@ export async function getAgentStatus(startPath: string): Promise<AgentStatus> {
     pendingPatch:
       state.lastProposedPatchPath && existsSync(state.lastProposedPatchPath)
         ? state.lastProposedPatchPath
+        : null,
+    lastAppliedPatch:
+      state.lastAppliedPatchPath && existsSync(state.lastAppliedPatchPath)
+        ? state.lastAppliedPatchPath
         : null,
   };
 }

@@ -124,7 +124,7 @@ describe('CLI commands', () => {
     });
     await expect(parseCommand(['apply', '--yes'], cwd)).resolves.toMatchObject({ exitCode: 1 });
     await expect(parseCommand(['test'], cwd)).resolves.toMatchObject({ exitCode: 1 });
-    await expect(parseCommand(['undo'], cwd)).resolves.toMatchObject({ exitCode: 0 });
+    await expect(parseCommand(['undo'], cwd)).resolves.toMatchObject({ exitCode: 1 });
     await expect(parseCommand(['status', '--json'], cwd)).resolves.toMatchObject({ exitCode: 0 });
     await expect(parseCommand(['doctor'], cwd)).resolves.toMatchObject({ exitCode: 0 });
   });
@@ -177,7 +177,8 @@ describe('CLI commands', () => {
       Policy file: present
       Sessions dir: present
       Patches dir: present
-      Pending patch: none"
+      Pending patch: none
+      Last applied patch: none"
     `);
   });
 
@@ -200,10 +201,11 @@ describe('CLI commands', () => {
     expect(runtime.stderr.join('\n')).toContain('No patch is currently queued.');
   });
 
-  it('blocks apply in read-only mode before Milestone 3 execution', async () => {
+  it('blocks apply in read-only mode', async () => {
     const cwd = await createTempRepo();
     await initializeRepo(cwd);
     await writePolicy(cwd, {}, { readOnly: true });
+    await writeFile(path.join(cwd, '.agent', 'patches', 'last-proposed.patch'), '123\n', 'utf8');
     await writeState(cwd, {
       lastProposedPatchPath: path.join(cwd, '.agent', 'patches', 'last-proposed.patch'),
       lastAppliedPatchPath: null,
@@ -236,6 +238,7 @@ describe('CLI commands', () => {
     const cwd = await createTempRepo();
     await initializeRepo(cwd);
     await writePolicy(cwd);
+    await writeFile(path.join(cwd, '.agent', 'patches', 'last-proposed.patch'), '123\n', 'utf8');
     await writeState(cwd, {
       lastProposedPatchPath: path.join(cwd, '.agent', 'patches', 'last-proposed.patch'),
       lastAppliedPatchPath: null,
@@ -245,6 +248,57 @@ describe('CLI commands', () => {
 
     expect(runtime.exitCode).toBe(1);
     expect(runtime.stderr.join('\n')).toContain('Re-run with --yes');
+  });
+
+  it('applies the queued patch and clears the pending state', async () => {
+    const cwd = await createTempRepo();
+    await initializeRepo(cwd);
+    await writePolicy(cwd, {}, { confirmApply: false });
+    await writeFile(path.join(cwd, 'README.md'), 'before\n', 'utf8');
+    const patchPath = path.join(cwd, '.agent', 'patches', 'last-proposed.patch');
+    await writeFile(
+      patchPath,
+      ['--- a/README.md', '+++ b/README.md', '@@ -1,1 +1,1 @@', '-before', '+after', ''].join('\n'),
+      'utf8'
+    );
+    await writeState(cwd, {
+      lastProposedPatchPath: patchPath,
+      lastAppliedPatchPath: null,
+    });
+
+    const runtime = await parseCommand(['apply'], cwd);
+
+    expect(runtime.exitCode).toBe(0);
+    expect(await readFile(path.join(cwd, 'README.md'), 'utf8')).toBe('after\n');
+    expect(runtime.stdout.join('\n')).toContain('Applied patch touching 1 file(s).');
+
+    const state = JSON.parse(await readFile(path.join(cwd, '.agent', 'state.json'), 'utf8'));
+    expect(state.lastProposedPatchPath).toBeNull();
+    expect(state.lastAppliedPatchPath).toContain('last-applied.patch');
+  });
+
+  it('undoes the last applied patch and restores the previous content', async () => {
+    const cwd = await createTempRepo();
+    await initializeRepo(cwd);
+    await writePolicy(cwd, {}, { confirmApply: false });
+    await writeFile(path.join(cwd, 'README.md'), 'before\n', 'utf8');
+    const patchPath = path.join(cwd, '.agent', 'patches', 'last-proposed.patch');
+    await writeFile(
+      patchPath,
+      ['--- a/README.md', '+++ b/README.md', '@@ -1,1 +1,1 @@', '-before', '+after', ''].join('\n'),
+      'utf8'
+    );
+    await writeState(cwd, {
+      lastProposedPatchPath: patchPath,
+      lastAppliedPatchPath: null,
+    });
+
+    await parseCommand(['apply'], cwd);
+    const runtime = await parseCommand(['undo'], cwd);
+
+    expect(runtime.exitCode).toBe(0);
+    expect(await readFile(path.join(cwd, 'README.md'), 'utf8')).toBe('before\n');
+    expect(runtime.stdout.join('\n')).toContain('Rolled back the last applied patch.');
   });
 
   it('denies test command execution when nothing is allowlisted', async () => {
