@@ -33,10 +33,7 @@ Created `tsconfig.build.json`:
 ```json
 {
   "files": [],
-  "references": [
-    { "path": "./packages/core" },
-    { "path": "./packages/cli" }
-  ]
+  "references": [{ "path": "./packages/core" }, { "path": "./packages/cli" }]
 }
 ```
 
@@ -73,6 +70,21 @@ Updated `clean` scripts to remove:
 
 This prevents stale incremental state from hiding build-order problems locally.
 
+### 5. Fixed a follow-up CI lint failure
+
+After adding `tsconfig.build.json`, CI still failed on `npm run lint` because Biome wanted the `references` array formatted in its compact single-line form for this file.
+
+The file was updated from a multi-line array/object layout to:
+
+```json
+{
+  "files": [],
+  "references": [{ "path": "./packages/core" }, { "path": "./packages/cli" }]
+}
+```
+
+This did not change the build behavior. It only aligned the new file with the repository formatter rules so `biome check .` passes.
+
 ## Files Changed
 
 - `package.json`
@@ -92,10 +104,12 @@ Using `tsc -b` with a solution config fixes that by letting TypeScript:
 
 ## Verification
 
-The fix was verified with a cold local build:
+The build fix was verified with a cold local build:
 
 1. reinstall dependencies with `npm ci`
 2. remove prior build artifacts
 3. run `npm run build`
 
 Result: the build completed successfully from a clean state.
+
+The remaining CI issue was a formatter-only failure on `tsconfig.build.json`, which was resolved by matching Biome's expected JSON layout.
