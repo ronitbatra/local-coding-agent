@@ -2,7 +2,7 @@
  * runCommand - Execute allowlisted commands with timeouts
  */
 
-import type { Tool, ToolResult } from '../Tool';
+import type { Tool, ToolResult } from '../Tool.js';
 
 export interface CommandResult {
   exitCode: number;

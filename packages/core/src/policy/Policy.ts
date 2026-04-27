@@ -5,18 +5,26 @@
  * patch size limits, and safe mode toggles.
  */
 
+export interface SafeModePolicy {
+  readOnly: boolean;
+  confirmApply: boolean;
+  confirmCommands: boolean;
+}
+
 export interface Policy {
   allowedRepoRoots: string[];
   commandAllowlist: string[];
   maxFileSize: number;
   maxPatchSize: number;
   maxFilesChanged: number;
-  safeMode: {
-    readOnly: boolean;
-    confirmApply: boolean;
-    confirmCommands: boolean;
-  };
+  safeMode: SafeModePolicy;
 }
+
+export const DEFAULT_SAFE_MODE_POLICY: SafeModePolicy = {
+  readOnly: false,
+  confirmApply: true,
+  confirmCommands: true,
+};
 
 export const DEFAULT_POLICY: Policy = {
   allowedRepoRoots: [],
@@ -24,9 +32,5 @@ export const DEFAULT_POLICY: Policy = {
   maxFileSize: 1024 * 1024, // 1MB
   maxPatchSize: 100 * 1024, // 100KB
   maxFilesChanged: 50,
-  safeMode: {
-    readOnly: false,
-    confirmApply: true,
-    confirmCommands: true,
-  },
+  safeMode: DEFAULT_SAFE_MODE_POLICY,
 };

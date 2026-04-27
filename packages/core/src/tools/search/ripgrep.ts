@@ -2,7 +2,7 @@
  * ripgrep - Search code using ripgrep
  */
 
-import type { Tool, ToolResult } from '../Tool';
+import type { Tool, ToolResult } from '../Tool.js';
 
 export class RipgrepTool implements Tool {
   name = 'search_code';

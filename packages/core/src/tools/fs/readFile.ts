@@ -2,7 +2,7 @@
  * readFile tool - Read file contents with optional range
  */
 
-import type { Tool, ToolResult } from '../Tool';
+import type { Tool, ToolResult } from '../Tool.js';
 
 export class ReadFileTool implements Tool {
   name = 'read_file';

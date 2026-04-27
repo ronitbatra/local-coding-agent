@@ -2,8 +2,8 @@
  * validateDiff - Ensure paths within repo + policy, reject binary modifications
  */
 
-import type { Policy } from '../../policy/Policy';
-import type { UnifiedDiff } from './parseUnifiedDiff';
+import type { Policy } from '../../policy/Policy.js';
+import type { UnifiedDiff } from './parseUnifiedDiff.js';
 
 export interface ValidationResult {
   valid: boolean;

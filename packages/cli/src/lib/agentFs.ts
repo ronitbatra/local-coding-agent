@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { DEFAULT_POLICY } from '@local-agent/core';
 
 const AGENT_DIRNAME = '.agent';
 const POLICY_FILENAME = 'policy.json';
@@ -33,19 +34,6 @@ export interface AgentStatus {
   patchesDirExists: boolean;
   pendingPatch: string | null;
 }
-
-const DEFAULT_POLICY = {
-  allowedRepoRoots: [],
-  commandAllowlist: [],
-  maxFileSize: 1024 * 1024,
-  maxPatchSize: 100 * 1024,
-  maxFilesChanged: 50,
-  safeMode: {
-    readOnly: false,
-    confirmApply: true,
-    confirmCommands: true,
-  },
-};
 
 const DEFAULT_STATE: AgentState = {
   lastProposedPatchPath: null,
@@ -104,6 +92,9 @@ export async function initializeAgent(repoRoot: string): Promise<AgentPaths> {
     const policy = {
       ...DEFAULT_POLICY,
       allowedRepoRoots: [repoRoot],
+      safeMode: {
+        ...DEFAULT_POLICY.safeMode,
+      },
     };
     await writeFile(paths.policyPath, `${JSON.stringify(policy, null, 2)}\n`, 'utf8');
   }

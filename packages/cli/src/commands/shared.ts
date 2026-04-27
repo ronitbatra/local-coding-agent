@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import {
   getAgentStatus,
@@ -8,7 +9,7 @@ import {
 } from '../lib/agentFs.js';
 import { CliCommandError } from '../lib/commandHelpers.js';
 import type { CommandResult } from '../lib/output.js';
-import { loadAgentPolicy, pickAllowedTestCommand } from '../lib/policy.js';
+import { loadAgentPolicy, pickAllowedTestCommand, requirePolicyApproval } from '../lib/policy.js';
 import type { CliRuntime } from '../lib/runtime.js';
 import { confirmApply, confirmCommand } from '../ui/prompts.js';
 
@@ -96,7 +97,7 @@ export async function handleAsk(
     human: [
       `Accepted task: ${task}`,
       `Mode: ${options.dryRun ? 'dry-run' : 'proposal only'}`,
-      `Apply: ${options.noApply ? 'disabled' : 'not yet available in ask flow'}`,
+      `Apply: ${options.noApply ? 'disabled via --no-apply' : 'not yet available in ask flow'}`,
       'Patch generation is introduced in later milestones.',
     ],
   };
@@ -121,10 +122,6 @@ export async function handleApply(
   }
 
   const policy = await loadAgentPolicy(repoRoot);
-  if (policy.safeMode.readOnly) {
-    throw new CliCommandError('Policy blocks patch application because safeMode.readOnly is true.');
-  }
-
   const state = await readAgentState(repoRoot);
   if (!state.lastProposedPatchPath) {
     throw new CliCommandError(
@@ -133,11 +130,17 @@ export async function handleApply(
   }
 
   const pendingPatchPath = state.lastProposedPatchPath;
+  const pendingPatchStat = await stat(pendingPatchPath).catch(() => null);
+  const decision = requirePolicyApproval(policy, repoRoot, {
+    kind: 'apply',
+    targetPath: pendingPatchPath,
+    patchSize: pendingPatchStat?.size,
+  });
 
   await requireInteractiveConfirmation(
     runtime,
     options,
-    policy.safeMode.confirmApply,
+    decision.requiresConfirmation,
     async () => confirmApply(runtime.io, [path.basename(pendingPatchPath)]),
     'applying the pending patch'
   );
@@ -197,11 +200,15 @@ export async function handleTest(
   }
 
   const commandToRun = selectedCommand;
+  const decision = requirePolicyApproval(policy, repoRoot, {
+    kind: 'command',
+    command: commandToRun,
+  });
 
   await requireInteractiveConfirmation(
     runtime,
     options,
-    policy.safeMode.confirmCommands,
+    decision.requiresConfirmation,
     async () => confirmCommand(runtime.io, commandToRun),
     `running "${commandToRun}"`
   );

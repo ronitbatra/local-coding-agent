@@ -6,12 +6,12 @@
  * No UI dependencies.
  */
 
-export * from './policy/Policy';
-export * from './policy/validate';
-export * from './runtime/AgentRunner';
-export * from './runtime/EventBus';
-export * from './runtime/SessionStore';
-export * from './tools/Tool';
-export * from './util/errors';
-export * from './util/logger';
-export * from './util/paths';
+export * from './policy/Policy.js';
+export * from './policy/validate.js';
+export * from './runtime/AgentRunner.js';
+export * from './runtime/EventBus.js';
+export * from './runtime/SessionStore.js';
+export * from './tools/Tool.js';
+export * from './util/errors.js';
+export * from './util/logger.js';
+export * from './util/paths.js';

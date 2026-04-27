@@ -2,7 +2,7 @@
  * applyDiff - Apply unified diff to filesystem
  */
 
-import type { UnifiedDiff } from './parseUnifiedDiff';
+import type { UnifiedDiff } from './parseUnifiedDiff.js';
 
 export interface ApplyResult {
   success: boolean;
