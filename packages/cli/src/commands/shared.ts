@@ -1,9 +1,13 @@
-import { stat } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { applyDiff, parseUnifiedDiff, rollbackLastPatch, validateDiff } from '@local-agent/core';
 import {
+  clearAppliedPatchRecord,
   getAgentStatus,
   initializeAgent,
   readAgentState,
+  readAppliedPatchRecord,
+  recordAppliedPatch,
   resolveInitRoot,
   resolveRepoRoot,
 } from '../lib/agentFs.js';
@@ -131,6 +135,12 @@ export async function handleApply(
 
   const pendingPatchPath = state.lastProposedPatchPath;
   const pendingPatchStat = await stat(pendingPatchPath).catch(() => null);
+  if (!pendingPatchStat) {
+    throw new CliCommandError('The queued patch file no longer exists.', 1, {
+      pendingPatch: pendingPatchPath,
+    });
+  }
+
   const decision = requirePolicyApproval(policy, repoRoot, {
     kind: 'apply',
     targetPath: pendingPatchPath,
@@ -145,9 +155,49 @@ export async function handleApply(
     'applying the pending patch'
   );
 
-  throw new CliCommandError('Patch application is implemented in Milestone 3.', 1, {
-    pendingPatch: pendingPatchPath,
-  });
+  let diffText: string;
+
+  try {
+    diffText = await readFile(pendingPatchPath, 'utf8');
+  } catch {
+    throw new CliCommandError('Unable to read the queued patch file.', 1, {
+      pendingPatch: pendingPatchPath,
+    });
+  }
+
+  let diff: ReturnType<typeof parseUnifiedDiff>;
+  try {
+    diff = parseUnifiedDiff(diffText);
+  } catch (error) {
+    throw new CliCommandError(error instanceof Error ? error.message : 'Invalid unified diff.', 1);
+  }
+
+  const validation = validateDiff(diff, policy, repoRoot);
+  if (!validation.valid) {
+    throw new CliCommandError(validation.errors.join(' '), 1);
+  }
+
+  const applyResult = await applyDiff(diff, repoRoot);
+  if (!applyResult.success || !applyResult.metadata) {
+    throw new CliCommandError(applyResult.error ?? 'Patch application failed.', 1);
+  }
+
+  const record = await recordAppliedPatch(repoRoot, pendingPatchPath, applyResult.metadata);
+  await rm(pendingPatchPath, { force: true });
+
+  return {
+    ok: true,
+    message: `Applied patch touching ${applyResult.filesChanged.length} file(s).`,
+    data: {
+      repoRoot,
+      filesChanged: applyResult.filesChanged,
+      appliedAt: record.appliedAt,
+    },
+    human: [
+      `Applied patch touching ${applyResult.filesChanged.length} file(s).`,
+      ...applyResult.filesChanged.map((filePath) => `Changed: ${filePath}`),
+    ],
+  };
 }
 
 export async function handleStatus(cwd: string): Promise<CommandResult> {
@@ -168,6 +218,7 @@ export async function handleStatus(cwd: string): Promise<CommandResult> {
       `Sessions dir: ${status.sessionsDirExists ? 'present' : 'missing'}`,
       `Patches dir: ${status.patchesDirExists ? 'present' : 'missing'}`,
       `Pending patch: ${status.pendingPatch ?? 'none'}`,
+      `Last applied patch: ${status.lastAppliedPatch ?? 'none'}`,
     ],
   };
 }
@@ -237,10 +288,23 @@ export async function handleUndo(cwd: string): Promise<CommandResult> {
     );
   }
 
+  const record = await readAppliedPatchRecord(repoRoot);
+  if (!record) {
+    throw new CliCommandError('No applied patch is available to undo.');
+  }
+
+  const rollbackResult = await rollbackLastPatch(repoRoot, record.reversePatchPath);
+  if (!rollbackResult.success) {
+    throw new CliCommandError(rollbackResult.error ?? 'Rollback failed.');
+  }
+
+  await clearAppliedPatchRecord(repoRoot);
+
   return {
     ok: true,
-    message: 'Undo command routing is wired. Rollback support arrives in Milestone 3.',
-    data: { repoRoot },
+    message: 'Rolled back the last applied patch.',
+    data: { repoRoot, patchPath: record.patchPath },
+    human: ['Rolled back the last applied patch.', `Patch: ${record.patchPath}`],
   };
 }
 
