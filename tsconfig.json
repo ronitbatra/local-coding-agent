@@ -4,6 +4,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "lib": ["ES2022"],
+    "types": ["node"],
     "moduleResolution": "bundler",
     "paths": {
       "@local-agent/core": ["packages/core/src/index.ts"]

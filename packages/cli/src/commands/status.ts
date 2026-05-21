@@ -13,7 +13,7 @@ export function createStatusCommand(runtime: CliRuntime): Command {
   return addJsonOption(
     new Command('status').description('Show agent status and last run summary').action(
       createActionHandler(runtime, async () => {
-        return handleStatus(runtime.cwd);
+        return handleStatus(runtime);
       })
     )
   );
