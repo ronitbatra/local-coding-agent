@@ -42,14 +42,14 @@
 
 ## Milestone 2 — Policy + Safety Guardrails (No AI Yet)
 ### Tasks
-- [ ] Define `policy.json` schema:
-  - [ ] allowed repo roots / path allowlist (default: current repo)
-  - [ ] command allowlist (default: none)
-  - [ ] max file size to read
-  - [ ] max patch size / max files changed
-  - [ ] safe mode toggles (read-only, confirm apply, confirm commands)
-- [ ] Policy enforcement layer (single gate before tool execution)
-- [ ] Confirmation prompts (TTY) + non-interactive behavior (`--yes` / `--no-apply`)
+- [x] Define `policy.json` schema:
+  - [x] allowed repo roots / path allowlist (default: current repo)
+  - [x] command allowlist (default: none)
+  - [x] max file size to read
+  - [x] max patch size / max files changed
+  - [x] safe mode toggles (read-only, confirm apply, confirm commands)
+- [x] Policy enforcement layer (single gate before tool execution)
+- [x] Confirmation prompts (TTY) + non-interactive behavior (`--yes` / `--no-apply`)
 
 ### Benchmarks / Tests
 - **Unit:** policy schema validation (valid/invalid)
@@ -62,21 +62,21 @@
 
 ## Milestone 3 — Filesystem Tools + Patch Pipeline (No AI Yet)
 ### Tasks
-- [ ] Tool implementations:
-  - [ ] `list_files(glob)`
-  - [ ] `read_file(path, range?)`
-  - [ ] `search_code(query)` (ripgrep)
-  - [ ] `git_status`, `git_diff`
-- [ ] Unified diff validator:
-  - [ ] ensure paths within repo + policy
-  - [ ] reject binary modifications unless explicitly allowed
-  - [ ] cap total hunks/files/bytes
-- [ ] Patch application:
-  - [ ] apply unified diff
-  - [ ] record patch metadata (files changed, timestamps)
-  - [ ] support dry-run
-- [ ] Rollback:
-  - [ ] `agent undo` reverts last applied patch (use git if available; otherwise stored reverse diff)
+- [x] Tool implementations:
+  - [x] `list_files(glob)`
+  - [x] `read_file(path, range?)`
+  - [x] `search_code(query)` (ripgrep)
+  - [x] `git_status`, `git_diff`
+- [x] Unified diff validator:
+  - [x] ensure paths within repo + policy
+  - [x] reject binary modifications unless explicitly allowed
+  - [x] cap total hunks/files/bytes
+- [x] Patch application:
+  - [x] apply unified diff
+  - [x] record patch metadata (files changed, timestamps)
+  - [x] support dry-run
+- [x] Rollback:
+  - [x] `agent undo` reverts last applied patch (use git if available; otherwise stored reverse diff)
 
 ### Benchmarks / Tests
 - **Unit:** diff parser/validator rejects malformed diffs

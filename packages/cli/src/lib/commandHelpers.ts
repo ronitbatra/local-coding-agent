@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import type { CommandResult } from './output.js';
 import { renderCommandResult } from './output.js';
 import type { CliRuntime } from './runtime.js';
+import { startCommandSession } from './session.js';
 
 export class CliCommandError extends Error {
   readonly exitCode: number;
@@ -28,8 +29,34 @@ export function createActionHandler<TOptions extends JsonOption>(
   handler: (options: TOptions, command: Command) => Promise<CommandResult>
 ): (options: TOptions, command: Command) => Promise<void> {
   return async (options: TOptions, command: Command): Promise<void> => {
+    const session = await startCommandSession(runtime, command.name());
+    runtime.sessionStore = session.store;
+    let interrupted = false;
+    const onSigint = (): void => {
+      if (interrupted) {
+        return;
+      }
+
+      interrupted = true;
+      void (async () => {
+        await session.store.abort('Interrupted by SIGINT.');
+        runtime.setExitCode(130);
+        process.exit(130);
+      })();
+    };
+
+    process.once('SIGINT', onSigint);
+
     try {
       const result = await handler(options, command);
+      await session.store.appendEvent('command_output', {
+        stream: 'system',
+        message: result.message,
+      });
+      await session.store.complete({
+        message: result.message,
+        exitCode: 0,
+      });
       renderCommandResult(result, options.json ?? false, runtime.io);
       runtime.setExitCode(0);
     } catch (error) {
@@ -37,6 +64,12 @@ export function createActionHandler<TOptions extends JsonOption>(
         error instanceof CliCommandError
           ? error
           : new CliCommandError(error instanceof Error ? error.message : 'Unknown command failure');
+
+      await session.store.fail({
+        message: commandError.message,
+        exitCode: commandError.exitCode,
+        details: commandError.data,
+      });
 
       renderCommandResult(
         {
@@ -48,6 +81,9 @@ export function createActionHandler<TOptions extends JsonOption>(
         runtime.io
       );
       runtime.setExitCode(commandError.exitCode);
+    } finally {
+      runtime.sessionStore = undefined;
+      process.off('SIGINT', onSigint);
     }
   };
 }

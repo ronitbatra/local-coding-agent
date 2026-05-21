@@ -17,14 +17,97 @@ export type EventType =
   | 'done'
   | 'error';
 
-export interface AgentEvent {
-  type: EventType;
+export interface PlanEventData {
+  summary: string;
+  steps?: string[];
+}
+
+export interface ToolCallEventData {
+  tool: string;
+  input?: unknown;
+}
+
+export interface ToolResultEventData {
+  tool: string;
+  success: boolean;
+  output?: unknown;
+  error?: string;
+}
+
+export interface PatchProposedEventData {
+  patchPath: string;
+  fileCount?: number;
+  byteLength?: number;
+}
+
+export interface PatchAppliedEventData {
+  patchPath: string;
+  filesChanged: string[];
+  dryRun?: boolean;
+}
+
+export interface CommandStartedEventData {
+  command: string;
+  argv?: string[];
+  cwd?: string;
+}
+
+export interface CommandOutputEventData {
+  stream: 'stdout' | 'stderr' | 'system';
+  message: string;
+}
+
+export interface DoneEventData {
+  message: string;
+  exitCode?: number;
+}
+
+export interface ErrorEventData {
+  message: string;
+  exitCode?: number;
+  details?: unknown;
+}
+
+export interface EventDataMap {
+  plan: PlanEventData;
+  tool_call: ToolCallEventData;
+  tool_result: ToolResultEventData;
+  patch_proposed: PatchProposedEventData;
+  patch_applied: PatchAppliedEventData;
+  command_started: CommandStartedEventData;
+  command_output: CommandOutputEventData;
+  done: DoneEventData;
+  error: ErrorEventData;
+}
+
+export interface AgentEvent<TType extends EventType = EventType> {
+  type: TType;
   timestamp: number;
-  data: unknown;
+  sequence: number;
+  data: EventDataMap[TType];
+}
+
+export function isAgentEvent(value: unknown): value is AgentEvent {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.type === 'string' &&
+    typeof candidate.timestamp === 'number' &&
+    Number.isFinite(candidate.timestamp) &&
+    typeof candidate.sequence === 'number' &&
+    Number.isInteger(candidate.sequence) &&
+    candidate.sequence >= 1 &&
+    typeof candidate.data === 'object' &&
+    candidate.data !== null
+  );
 }
 
 export class EventBus {
   private listeners: Map<EventType, Array<(event: AgentEvent) => void>> = new Map();
+  private sequence = 0;
 
   on(type: EventType, handler: (event: AgentEvent) => void): void {
     if (!this.listeners.has(type)) {
@@ -33,16 +116,19 @@ export class EventBus {
     this.listeners.get(type)?.push(handler);
   }
 
-  emit(type: EventType, data: unknown): void {
-    const event: AgentEvent = {
+  emit<TType extends EventType>(type: TType, data: EventDataMap[TType]): AgentEvent<TType> {
+    const event: AgentEvent<TType> = {
       type,
       timestamp: Date.now(),
+      sequence: ++this.sequence,
       data,
     };
     const handlers = this.listeners.get(type) || [];
     handlers.forEach((handler) => {
       handler(event);
     });
+
+    return event;
   }
 
   off(type: EventType, handler: (event: AgentEvent) => void): void {

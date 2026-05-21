@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { DEFAULT_POLICY, type PatchApplicationMetadata } from '@local-agent/core';
+import { DEFAULT_POLICY, type PatchApplicationMetadata, SessionStore } from '@local-agent/core';
 
 const AGENT_DIRNAME = '.agent';
 const POLICY_FILENAME = 'policy.json';
@@ -45,6 +45,19 @@ export interface AgentStatus {
   patchesDirExists: boolean;
   pendingPatch: string | null;
   lastAppliedPatch: string | null;
+  lastSession: {
+    sessionId: string;
+    command: string;
+    status: 'running' | 'completed' | 'aborted' | 'error';
+    startedAt: number;
+    endedAt?: number;
+    eventCount: number;
+    summary?: string;
+  } | null;
+}
+
+interface AgentStatusOptions {
+  excludeSessionId?: string;
 }
 
 const DEFAULT_STATE: AgentState = {
@@ -220,11 +233,18 @@ export async function clearAppliedPatchRecord(repoRoot: string): Promise<void> {
   });
 }
 
-export async function getAgentStatus(startPath: string): Promise<AgentStatus> {
+export async function getAgentStatus(
+  startPath: string,
+  options: AgentStatusOptions = {}
+): Promise<AgentStatus> {
   const repoRoot = resolveRepoRoot(startPath) ?? path.resolve(startPath);
   const paths = getAgentPaths(repoRoot);
   const initialized = existsSync(paths.agentDir);
   const state = initialized ? await readAgentState(repoRoot) : DEFAULT_STATE;
+  const sessions = initialized ? await new SessionStore(paths.sessionsDir).listSessions() : [];
+  const latestSessionMetadata = sessions.find(
+    (session) => session.sessionId !== options.excludeSessionId
+  );
 
   return {
     repoRoot,
@@ -241,5 +261,16 @@ export async function getAgentStatus(startPath: string): Promise<AgentStatus> {
       state.lastAppliedPatchPath && existsSync(state.lastAppliedPatchPath)
         ? state.lastAppliedPatchPath
         : null,
+    lastSession: latestSessionMetadata
+      ? {
+          sessionId: latestSessionMetadata.sessionId,
+          command: latestSessionMetadata.command,
+          status: latestSessionMetadata.status,
+          startedAt: latestSessionMetadata.startedAt,
+          endedAt: latestSessionMetadata.endedAt,
+          eventCount: latestSessionMetadata.eventCount,
+          summary: latestSessionMetadata.summary,
+        }
+      : null,
   };
 }

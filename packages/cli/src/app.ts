@@ -3,6 +3,7 @@ import { createApplyCommand } from './commands/apply.js';
 import { createAskCommand } from './commands/ask.js';
 import { createDoctorCommand } from './commands/doctor.js';
 import { createInitCommand } from './commands/init.js';
+import { createReplayCommand } from './commands/replay.js';
 import { createStatusCommand } from './commands/status.js';
 import { createTestCommand } from './commands/test.js';
 import { createUndoCommand } from './commands/undo.js';
@@ -19,6 +20,7 @@ export function createProgram(runtime: CliRuntime = createRuntime()): Command {
   program.addCommand(createTestCommand(runtime));
   program.addCommand(createUndoCommand(runtime));
   program.addCommand(createStatusCommand(runtime));
+  program.addCommand(createReplayCommand(runtime));
   program.addCommand(createDoctorCommand(runtime));
 
   return program;

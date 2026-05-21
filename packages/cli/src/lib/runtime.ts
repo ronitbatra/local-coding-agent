@@ -1,3 +1,5 @@
+import type { SessionStore } from '@local-agent/core';
+
 export interface CliIO {
   stdout: (message: string) => void;
   stderr: (message: string) => void;
@@ -9,6 +11,7 @@ export interface CliIO {
 export interface CliRuntime {
   cwd: string;
   io: CliIO;
+  sessionStore?: SessionStore;
   setExitCode: (code: number) => void;
 }
 

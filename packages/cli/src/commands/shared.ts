@@ -15,6 +15,7 @@ import { CliCommandError } from '../lib/commandHelpers.js';
 import type { CommandResult } from '../lib/output.js';
 import { loadAgentPolicy, pickAllowedTestCommand, requirePolicyApproval } from '../lib/policy.js';
 import type { CliRuntime } from '../lib/runtime.js';
+import { readSessionById } from '../lib/session.js';
 import { confirmApply, confirmCommand } from '../ui/prompts.js';
 
 interface ConfirmationOptions {
@@ -165,6 +166,11 @@ export async function handleApply(
     });
   }
 
+  await runtime.sessionStore?.appendEvent('patch_proposed', {
+    patchPath: pendingPatchPath,
+    byteLength: Buffer.byteLength(diffText, 'utf8'),
+  });
+
   let diff: ReturnType<typeof parseUnifiedDiff>;
   try {
     diff = parseUnifiedDiff(diffText);
@@ -181,6 +187,12 @@ export async function handleApply(
   if (!applyResult.success || !applyResult.metadata) {
     throw new CliCommandError(applyResult.error ?? 'Patch application failed.', 1);
   }
+
+  await runtime.sessionStore?.appendEvent('patch_applied', {
+    patchPath: pendingPatchPath,
+    filesChanged: applyResult.filesChanged,
+    dryRun: false,
+  });
 
   const record = await recordAppliedPatch(repoRoot, pendingPatchPath, applyResult.metadata);
   await rm(pendingPatchPath, { force: true });
@@ -200,8 +212,19 @@ export async function handleApply(
   };
 }
 
-export async function handleStatus(cwd: string): Promise<CommandResult> {
-  const status = await getAgentStatus(cwd);
+export async function handleStatus(runtime: CliRuntime): Promise<CommandResult> {
+  const status = await getAgentStatus(runtime.cwd, {
+    excludeSessionId: runtime.sessionStore?.getMetadata()?.sessionId,
+  });
+  const lastSessionLines = status.lastSession
+    ? [
+        `Last session: ${status.lastSession.sessionId}`,
+        `Last command: ${status.lastSession.command}`,
+        `Last result: ${status.lastSession.status}`,
+        `Last summary: ${status.lastSession.summary ?? 'n/a'}`,
+        `Last events: ${status.lastSession.eventCount}`,
+      ]
+    : ['Last session: none'];
 
   return {
     ok: true,
@@ -219,6 +242,7 @@ export async function handleStatus(cwd: string): Promise<CommandResult> {
       `Patches dir: ${status.patchesDirExists ? 'present' : 'missing'}`,
       `Pending patch: ${status.pendingPatch ?? 'none'}`,
       `Last applied patch: ${status.lastAppliedPatch ?? 'none'}`,
+      ...lastSessionLines,
     ],
   };
 }
@@ -251,6 +275,11 @@ export async function handleTest(
   }
 
   const commandToRun = selectedCommand;
+  await runtime.sessionStore?.appendEvent('command_started', {
+    command: commandToRun,
+    argv: commandToRun.split(' '),
+    cwd: repoRoot,
+  });
   const decision = requirePolicyApproval(policy, repoRoot, {
     kind: 'command',
     command: commandToRun,
@@ -263,6 +292,11 @@ export async function handleTest(
     async () => confirmCommand(runtime.io, commandToRun),
     `running "${commandToRun}"`
   );
+
+  await runtime.sessionStore?.appendEvent('command_output', {
+    stream: 'system',
+    message: 'Command execution is deferred until Milestone 7 after policy checks succeed.',
+  });
 
   return {
     ok: true,
@@ -305,6 +339,28 @@ export async function handleUndo(cwd: string): Promise<CommandResult> {
     message: 'Rolled back the last applied patch.',
     data: { repoRoot, patchPath: record.patchPath },
     human: ['Rolled back the last applied patch.', `Patch: ${record.patchPath}`],
+  };
+}
+
+export async function handleReplay(cwd: string, sessionId: string): Promise<CommandResult> {
+  const session = await readSessionById(cwd, sessionId);
+  if (!session) {
+    throw new CliCommandError(`Session "${sessionId}" was not found.`, 1, { sessionId });
+  }
+
+  return {
+    ok: true,
+    message: `Replayed session ${session.metadata.sessionId}.`,
+    data: session,
+    human: [
+      `Session: ${session.metadata.sessionId}`,
+      `Command: ${session.metadata.command}`,
+      `Status: ${session.metadata.status}`,
+      ...session.events.map(
+        (event) =>
+          `#${event.sequence} ${event.type} ${new Date(event.timestamp).toISOString()} ${JSON.stringify(event.data)}`
+      ),
+    ],
   };
 }
 
