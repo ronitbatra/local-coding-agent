@@ -3,14 +3,23 @@
  */
 
 export function buildRunPrompt(task: string, context: string): string {
-  return `Task: ${task}
+  return `Task:
+${task}
 
 Context:
 ${context}
 
-Please provide:
-1. PLAN - Brief plan of changes
-2. PATCH - Unified diff format
-3. COMMANDS - Optional commands to run
-4. DONE - Mark completion`;
+Return only JSON in this exact shape:
+{
+  "plan": "short plan",
+  "patch": "unified diff text or null",
+  "commands": ["optional shell command suggestions"],
+  "done": true,
+  "tool_calls": [{"tool": "search_code", "args": {"query": "..."}}]
+}
+
+Constraints:
+- Do not include markdown fences.
+- Do not include keys outside the schema.
+- If no file edits are needed, set "patch" to null.`;
 }
