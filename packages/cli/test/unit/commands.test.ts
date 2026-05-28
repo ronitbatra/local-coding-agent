@@ -5,7 +5,7 @@
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProgram } from '../../src/app';
 import type { CliRuntime } from '../../src/lib/runtime';
 
@@ -101,6 +101,49 @@ async function parseCommand(args: string[], cwd: string): Promise<BufferedRuntim
 }
 
 describe('CLI commands', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.endsWith('/api/tags')) {
+          return new Response(JSON.stringify({ models: [{ name: 'qwen2.5-coder:14b' }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+
+        if (url.endsWith('/api/chat')) {
+          return new Response(
+            JSON.stringify({
+              message: {
+                content: JSON.stringify({
+                  plan: 'Update docs',
+                  patch: null,
+                  commands: [],
+                  done: true,
+                  tool_calls: [],
+                }),
+              },
+              done_reason: 'stop',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          );
+        }
+
+        return new Response(JSON.stringify({ error: 'not found' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        });
+      })
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
   it('registers all milestone 1 commands', () => {
     const program = createProgram(createBufferedRuntime(process.cwd()));
 
@@ -175,6 +218,7 @@ describe('CLI commands', () => {
       Initialized: yes
       Agent dir: TMP_DIR/.agent
       Policy file: present
+      Model file: present
       Sessions dir: present
       Patches dir: present
       Pending patch: none
@@ -348,6 +392,58 @@ describe('CLI commands', () => {
     const runtime = await parseCommand(['ask', 'update docs', '--no-apply'], cwd);
 
     expect(runtime.exitCode).toBe(0);
-    expect(runtime.stdout.join('\n')).toContain('Apply: disabled via --no-apply');
+    expect(runtime.stdout.join('\n')).toContain('Task: update docs');
+    expect(runtime.stdout.join('\n')).toContain('Plan: Update docs');
+  });
+
+  it('queues a proposed patch when model returns one', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.endsWith('/api/tags')) {
+          return new Response(JSON.stringify({ models: [{ name: 'qwen2.5-coder:14b' }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+
+        if (url.endsWith('/api/chat')) {
+          return new Response(
+            JSON.stringify({
+              message: {
+                content: JSON.stringify({
+                  plan: 'Edit readme',
+                  patch: [
+                    '--- a/README.md',
+                    '+++ b/README.md',
+                    '@@ -1 +1 @@',
+                    '-before',
+                    '+after',
+                    '',
+                  ].join('\n'),
+                  commands: [],
+                  done: true,
+                  tool_calls: [],
+                }),
+              },
+              done_reason: 'stop',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          );
+        }
+
+        return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
+      })
+    );
+
+    const cwd = await createTempRepo();
+    await parseCommand(['init'], cwd);
+
+    const runtime = await parseCommand(['ask', 'edit readme'], cwd);
+    expect(runtime.exitCode).toBe(0);
+
+    const state = JSON.parse(await readFile(path.join(cwd, '.agent', 'state.json'), 'utf8'));
+    expect(state.lastProposedPatchPath).toContain('.agent/patches/last-proposed.patch');
   });
 });

@@ -1,8 +1,18 @@
-import { readFile, rm, stat } from 'node:fs/promises';
+import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { applyDiff, parseUnifiedDiff, rollbackLastPatch, validateDiff } from '@local-agent/core';
+import {
+  applyDiff,
+  buildRunPrompt,
+  getSystemPrompt,
+  OllamaAdapter,
+  parseAgentOutput,
+  parseUnifiedDiff,
+  rollbackLastPatch,
+  validateDiff,
+} from '@local-agent/core';
 import {
   clearAppliedPatchRecord,
+  getAgentPaths,
   getAgentStatus,
   initializeAgent,
   readAgentState,
@@ -10,8 +20,10 @@ import {
   recordAppliedPatch,
   resolveInitRoot,
   resolveRepoRoot,
+  writeAgentState,
 } from '../lib/agentFs.js';
 import { CliCommandError } from '../lib/commandHelpers.js';
+import { loadModelConfig } from '../lib/model.js';
 import type { CommandResult } from '../lib/output.js';
 import { loadAgentPolicy, pickAllowedTestCommand, requirePolicyApproval } from '../lib/policy.js';
 import type { CliRuntime } from '../lib/runtime.js';
@@ -57,12 +69,14 @@ export async function handleInit(cwd: string): Promise<CommandResult> {
       repoRoot,
       agentDir: paths.agentDir,
       policyPath: paths.policyPath,
+      modelPath: paths.modelPath,
       sessionsDir: paths.sessionsDir,
       patchesDir: paths.patchesDir,
     },
     human: [
       `Initialized agent configuration in ${paths.agentDir}`,
       `Policy: ${paths.policyPath}`,
+      `Model config: ${paths.modelPath}`,
       `Sessions: ${paths.sessionsDir}`,
       `Patches: ${paths.patchesDir}`,
     ],
@@ -88,21 +102,72 @@ export async function handleAsk(
     );
   }
 
+  const modelConfig = await loadModelConfig(repoRoot);
+  const adapter = OllamaAdapter.fromModelConfig(modelConfig);
+  const serverAvailable = await adapter.checkServer();
+  if (!serverAvailable) {
+    throw new CliCommandError(
+      `Ollama server is unavailable at ${modelConfig.baseUrl}. Start it with: ollama serve`
+    );
+  }
+
+  const prompt = buildRunPrompt(task, 'No additional repository context gathered yet.');
+  let outputText: string;
+  try {
+    const completion = await adapter.complete(prompt, {
+      systemPrompt: getSystemPrompt(),
+      temperature: modelConfig.temperature,
+      contextLimit: modelConfig.contextLimit,
+    });
+    outputText = completion.content;
+  } catch (error) {
+    throw new CliCommandError(
+      error instanceof Error ? error.message : 'Ollama request failed unexpectedly.'
+    );
+  }
+
+  let output: ReturnType<typeof parseAgentOutput>;
+  try {
+    output = parseAgentOutput(outputText);
+  } catch (error) {
+    throw new CliCommandError(
+      error instanceof Error
+        ? `Model response did not match the strict JSON contract: ${error.message}`
+        : 'Model response did not match the strict JSON contract.'
+    );
+  }
+
+  let queuedPatchPath: string | null = null;
+  if (output.patch && output.patch.trim().length > 0) {
+    const { lastPatchPath } = getAgentPaths(repoRoot);
+    await writeFile(lastPatchPath, `${output.patch.trimEnd()}\n`, 'utf8');
+    await writeAgentState(repoRoot, {
+      lastProposedPatchPath: lastPatchPath,
+    });
+    queuedPatchPath = lastPatchPath;
+  }
+
   return {
     ok: true,
-    message: `Accepted task: ${task}`,
+    message: `Generated model response for task: ${task}`,
     data: {
       task,
       repoRoot,
+      model: modelConfig.model,
+      plan: output.plan,
+      commands: output.commands,
+      done: output.done,
+      toolCalls: output.tool_calls,
       dryRun: options.dryRun ?? false,
       noApply: options.noApply ?? false,
-      applied: false,
+      queuedPatchPath,
     },
     human: [
-      `Accepted task: ${task}`,
-      `Mode: ${options.dryRun ? 'dry-run' : 'proposal only'}`,
-      `Apply: ${options.noApply ? 'disabled via --no-apply' : 'not yet available in ask flow'}`,
-      'Patch generation is introduced in later milestones.',
+      `Task: ${task}`,
+      `Model: ${modelConfig.model}`,
+      `Plan: ${output.plan}`,
+      `Patch: ${queuedPatchPath ? queuedPatchPath : 'none'}`,
+      `Suggested commands: ${output.commands.length > 0 ? output.commands.join('; ') : 'none'}`,
     ],
   };
 }
@@ -215,6 +280,7 @@ export async function handleStatus(cwd: string): Promise<CommandResult> {
       `Initialized: ${status.initialized ? 'yes' : 'no'}`,
       `Agent dir: ${status.agentDir}`,
       `Policy file: ${status.policyExists ? 'present' : 'missing'}`,
+      `Model file: ${status.modelExists ? 'present' : 'missing'}`,
       `Sessions dir: ${status.sessionsDirExists ? 'present' : 'missing'}`,
       `Patches dir: ${status.patchesDirExists ? 'present' : 'missing'}`,
       `Pending patch: ${status.pendingPatch ?? 'none'}`,

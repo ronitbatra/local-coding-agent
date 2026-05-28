@@ -1,10 +1,15 @@
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { DEFAULT_POLICY, type PatchApplicationMetadata } from '@local-agent/core';
+import {
+  DEFAULT_MODEL_CONFIG,
+  DEFAULT_POLICY,
+  type PatchApplicationMetadata,
+} from '@local-agent/core';
 
 const AGENT_DIRNAME = '.agent';
 const POLICY_FILENAME = 'policy.json';
+const MODEL_FILENAME = 'model.json';
 const STATE_FILENAME = 'state.json';
 const SESSIONS_DIRNAME = 'sessions';
 const PATCHES_DIRNAME = 'patches';
@@ -27,6 +32,7 @@ export interface AgentPaths {
   repoRoot: string;
   agentDir: string;
   policyPath: string;
+  modelPath: string;
   sessionsDir: string;
   patchesDir: string;
   statePath: string;
@@ -41,6 +47,7 @@ export interface AgentStatus {
   initialized: boolean;
   agentDir: string;
   policyExists: boolean;
+  modelExists: boolean;
   sessionsDirExists: boolean;
   patchesDirExists: boolean;
   pendingPatch: string | null;
@@ -86,6 +93,7 @@ export function getAgentPaths(repoRoot: string): AgentPaths {
     repoRoot,
     agentDir,
     policyPath: path.join(agentDir, POLICY_FILENAME),
+    modelPath: path.join(agentDir, MODEL_FILENAME),
     sessionsDir: path.join(agentDir, SESSIONS_DIRNAME),
     patchesDir: path.join(agentDir, PATCHES_DIRNAME),
     statePath: path.join(agentDir, STATE_FILENAME),
@@ -127,6 +135,20 @@ export async function initializeAgent(repoRoot: string): Promise<AgentPaths> {
       },
     };
     await writeFile(paths.policyPath, `${JSON.stringify(policy, null, 2)}\n`, 'utf8');
+  }
+
+  if (!existsSync(paths.modelPath)) {
+    await writeFile(
+      paths.modelPath,
+      `${JSON.stringify(
+        {
+          ...DEFAULT_MODEL_CONFIG,
+        },
+        null,
+        2
+      )}\n`,
+      'utf8'
+    );
   }
 
   if (!existsSync(paths.statePath)) {
@@ -231,6 +253,7 @@ export async function getAgentStatus(startPath: string): Promise<AgentStatus> {
     initialized,
     agentDir: paths.agentDir,
     policyExists: existsSync(paths.policyPath),
+    modelExists: existsSync(paths.modelPath),
     sessionsDirExists: existsSync(paths.sessionsDir),
     patchesDirExists: existsSync(paths.patchesDir),
     pendingPatch:

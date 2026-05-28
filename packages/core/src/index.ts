@@ -6,8 +6,14 @@
  * No UI dependencies.
  */
 
+export * from './model/adapters/ollama.js';
+export * from './model/config.js';
+export * from './model/LLM.js';
 export * from './policy/Policy.js';
 export * from './policy/validate.js';
+export * from './prompts/formats.js';
+export * from './prompts/system.js';
+export * from './prompts/templates.js';
 export * from './runtime/AgentRunner.js';
 export * from './runtime/EventBus.js';
 export * from './runtime/SessionStore.js';

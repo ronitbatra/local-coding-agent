@@ -16,7 +16,9 @@ export interface LLM {
 }
 
 export interface LLMOptions {
+  systemPrompt?: string;
   temperature?: number;
   maxTokens?: number;
+  contextLimit?: number;
   stop?: string[];
 }
