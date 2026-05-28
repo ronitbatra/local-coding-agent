@@ -23,6 +23,25 @@ async function initializeGitRepo(repoRoot: string): Promise<void> {
 }
 
 describe('patch pipeline', () => {
+  it('allows read-only policy during diff validation for preview flows', () => {
+    const diff = parseUnifiedDiff(`--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-old\n+new\n`);
+    const validation = validateDiff(
+      diff,
+      {
+        ...DEFAULT_POLICY,
+        allowedRepoRoots: ['/tmp'],
+        safeMode: {
+          ...DEFAULT_POLICY.safeMode,
+          readOnly: true,
+        },
+      },
+      '/tmp'
+    );
+
+    expect(validation.valid).toBe(true);
+    expect(validation.errors).toEqual([]);
+  });
+
   it('rejects malformed diffs during parsing and validation', () => {
     expect(() => parseUnifiedDiff('not a diff')).toThrow(
       'Unified diff did not contain any file entries.'

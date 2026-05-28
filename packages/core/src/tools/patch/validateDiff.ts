@@ -7,6 +7,8 @@ import type { Policy } from '../../policy/Policy.js';
 import { evaluatePolicyOperation } from '../../policy/validate.js';
 import type { UnifiedDiff } from './parseUnifiedDiff.js';
 
+const READ_ONLY_BLOCK_REASON = 'Patch application is blocked because safeMode.readOnly is true.';
+
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
@@ -54,7 +56,10 @@ export function validateDiff(
     );
 
     if (!decision.allowed) {
-      errors.push(...decision.reasons);
+      const nonReadOnlyReasons = decision.reasons.filter(
+        (reason) => reason !== READ_ONLY_BLOCK_REASON
+      );
+      errors.push(...nonReadOnlyReasons);
     }
 
     for (const hunk of file.hunks) {
