@@ -6,6 +6,8 @@
  * No UI dependencies.
  */
 
+export * from './context/chunk.js';
+export * from './context/gather.js';
 export * from './model/adapters/ollama.js';
 export * from './model/config.js';
 export * from './model/LLM.js';

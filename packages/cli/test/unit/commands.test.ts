@@ -5,6 +5,7 @@
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DEFAULT_POLICY, normalizePolicy, parseUnifiedDiff, validateDiff } from '@local-agent/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProgram } from '../../src/app';
 import type { CliRuntime } from '../../src/lib/runtime';
@@ -468,6 +469,67 @@ describe('CLI commands', () => {
 
     const state = JSON.parse(await readFile(path.join(cwd, '.agent', 'state.json'), 'utf8'));
     expect(state.lastProposedPatchPath).toContain('.agent/patches/last-proposed.patch');
+    const patchText = await readFile(state.lastProposedPatchPath, 'utf8');
+    const diff = parseUnifiedDiff(patchText);
+    const policy = normalizePolicy(
+      {
+        ...DEFAULT_POLICY,
+        allowedRepoRoots: [cwd],
+      },
+      cwd
+    );
+    const validation = validateDiff(diff, policy, cwd);
+    expect(validation.valid).toBe(true);
+  });
+
+  it('rejects ask output when patch section contains prose before unified diff', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.endsWith('/api/tags')) {
+          return new Response(JSON.stringify({ models: [{ name: 'qwen2.5-coder:14b' }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+
+        if (url.endsWith('/api/chat')) {
+          return new Response(
+            JSON.stringify({
+              message: {
+                content: JSON.stringify({
+                  plan: 'Edit readme',
+                  patch: [
+                    'Here is your patch:',
+                    '--- a/README.md',
+                    '+++ b/README.md',
+                    '@@ -1 +1 @@',
+                    '-before',
+                    '+after',
+                    '',
+                  ].join('\n'),
+                  commands: [],
+                  done: true,
+                  tool_calls: [],
+                }),
+              },
+              done_reason: 'stop',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          );
+        }
+
+        return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
+      })
+    );
+
+    const cwd = await createTempRepo();
+    await parseCommand(['init'], cwd);
+
+    const runtime = await parseCommand(['ask', 'edit readme'], cwd);
+    expect(runtime.exitCode).toBe(1);
+    expect(runtime.stderr.join('\n')).toContain('leading prose');
   });
 
   it('writes a session log for successful commands and replays it in order', async () => {

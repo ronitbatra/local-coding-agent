@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { parseAgentOutput } from '../../src/prompts/formats';
+import { parseAgentOutput, validatePatchOutputContract } from '../../src/prompts/formats';
 
 describe('parseAgentOutput', () => {
   it('parses strict JSON output', () => {
@@ -57,5 +57,21 @@ describe('parseAgentOutput', () => {
 \`\`\``);
 
     expect(parsed.done).toBe(true);
+  });
+
+  it('rejects prose before unified diff headers in patch output', () => {
+    expect(() =>
+      validatePatchOutputContract(
+        [
+          'Here is your patch:',
+          '--- a/README.md',
+          '+++ b/README.md',
+          '@@ -1 +1 @@',
+          '-a',
+          '+b',
+          '',
+        ].join('\n')
+      )
+    ).toThrow('leading prose');
   });
 });
