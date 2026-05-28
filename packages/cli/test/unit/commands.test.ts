@@ -525,7 +525,7 @@ describe('CLI commands', () => {
     );
 
     const cwd = await createTempRepo();
-    await initializeRepo(cwd);
+    await parseCommand(['init'], cwd);
     await writeFile(path.join(cwd, 'README.md'), 'before\n', 'utf8');
     await writePolicy(
       cwd,

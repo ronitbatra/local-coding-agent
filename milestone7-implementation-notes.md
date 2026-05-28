@@ -119,3 +119,24 @@ Blocked locally:
 
 - Autopilot is opt-in via `--autopilot`; default ask behavior remains proposal-oriented.
 - Command execution remains policy-gated and repo-root scoped.
+
+## CI Failure Follow-Up Fix
+
+Observed CI failure:
+
+- `commands.test.ts` autopilot test expected `exitCode=0` but got `exitCode=1`.
+
+Root cause:
+
+- The test was constructing `.agent` manually (`initializeRepo`) and did not create `.agent/model.json`.
+- `handleAsk` now correctly requires model config via `loadModelConfig`, so the command failed early before autopilot logic executed.
+
+Fix applied:
+
+- Updated the autopilot integration test to initialize via `agent init` first, which creates `policy.json`, `model.json`, session dirs, and state files consistently.
+- File updated: [commands.test.ts](/Users/sampark/Desktop/CS/Projects/local-coding-agent/packages/cli/test/unit/commands.test.ts)
+
+Post-fix verification:
+
+- `npm run lint` passes
+- `npm run build` passes
