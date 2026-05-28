@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import {
   evaluatePolicyOperation,
   isCommandAllowed,
@@ -25,15 +27,42 @@ export async function loadAgentPolicy(repoRoot: string): Promise<AgentPolicy> {
 }
 
 export function pickAllowedTestCommand(policy: AgentPolicy): string | null {
-  const commonTestCommands = ['npm test', 'pnpm test', 'yarn test', 'vitest', 'pytest', 'go test'];
+  return policy.commandAllowlist[0] ?? null;
+}
 
-  for (const command of commonTestCommands) {
+export function discoverTestCommand(repoRoot: string, policy: AgentPolicy): string | null {
+  const candidates: string[] = [];
+
+  const add = (command: string): void => {
+    if (!candidates.includes(command)) {
+      candidates.push(command);
+    }
+  };
+
+  if (existsSync(path.join(repoRoot, 'package.json'))) {
+    add('npm test');
+    add('pnpm test');
+    add('yarn test');
+    add('vitest');
+  }
+  if (
+    existsSync(path.join(repoRoot, 'pytest.ini')) ||
+    existsSync(path.join(repoRoot, 'pyproject.toml')) ||
+    existsSync(path.join(repoRoot, 'requirements.txt'))
+  ) {
+    add('pytest');
+  }
+  if (existsSync(path.join(repoRoot, 'go.mod'))) {
+    add('go test ./...');
+  }
+
+  for (const command of candidates) {
     if (isCommandAllowed(command, policy)) {
       return command;
     }
   }
 
-  return policy.commandAllowlist[0] ?? null;
+  return pickAllowedTestCommand(policy);
 }
 
 export function requirePolicyApproval(

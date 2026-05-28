@@ -5,6 +5,7 @@ import {
   applyDiff,
   OllamaAdapter,
   parseUnifiedDiff,
+  RunCommandTool,
   rollbackLastPatch,
   validateDiff,
 } from '@local-agent/core';
@@ -23,12 +24,15 @@ import {
 import { CliCommandError } from '../lib/commandHelpers.js';
 import { loadModelConfig } from '../lib/model.js';
 import type { CommandResult } from '../lib/output.js';
-import { loadAgentPolicy, pickAllowedTestCommand, requirePolicyApproval } from '../lib/policy.js';
+import { discoverTestCommand, loadAgentPolicy, requirePolicyApproval } from '../lib/policy.js';
 import type { CliRuntime } from '../lib/runtime.js';
 import { readSessionById } from '../lib/session.js';
 import { confirmApply, confirmCommand } from '../ui/prompts.js';
 
 interface ConfirmationOptions {
+  autopilot?: boolean;
+  dryRun?: boolean;
+  noApply?: boolean;
   yes?: boolean;
 }
 
@@ -55,6 +59,160 @@ async function requireInteractiveConfirmation(
       confirmed: false,
     });
   }
+}
+
+async function queuePatch(repoRoot: string, patch: string): Promise<string> {
+  const { lastPatchPath } = getAgentPaths(repoRoot);
+  await writeFile(lastPatchPath, `${patch.trimEnd()}\n`, 'utf8');
+  await writeAgentState(repoRoot, {
+    lastProposedPatchPath: lastPatchPath,
+  });
+  return lastPatchPath;
+}
+
+async function applyQueuedPatch(
+  runtime: CliRuntime,
+  repoRoot: string,
+  policy: Awaited<ReturnType<typeof loadAgentPolicy>>,
+  pendingPatchPath: string,
+  options: ConfirmationOptions
+): Promise<{ filesChanged: string[]; appliedAt: string }> {
+  const pendingPatchStat = await stat(pendingPatchPath).catch(() => null);
+  if (!pendingPatchStat) {
+    throw new CliCommandError('The queued patch file no longer exists.', 1, {
+      pendingPatch: pendingPatchPath,
+    });
+  }
+
+  const decision = requirePolicyApproval(policy, repoRoot, {
+    kind: 'apply',
+    targetPath: pendingPatchPath,
+    patchSize: pendingPatchStat.size,
+  });
+
+  await requireInteractiveConfirmation(
+    runtime,
+    options,
+    decision.requiresConfirmation,
+    async () => confirmApply(runtime.io, [path.basename(pendingPatchPath)]),
+    'applying the pending patch'
+  );
+
+  const diffText = await readFile(pendingPatchPath, 'utf8').catch(() => {
+    throw new CliCommandError('Unable to read the queued patch file.', 1, {
+      pendingPatch: pendingPatchPath,
+    });
+  });
+
+  await runtime.sessionStore?.appendEvent('patch_proposed', {
+    patchPath: pendingPatchPath,
+    byteLength: Buffer.byteLength(diffText, 'utf8'),
+  });
+
+  let diff: ReturnType<typeof parseUnifiedDiff>;
+  try {
+    diff = parseUnifiedDiff(diffText);
+  } catch (error) {
+    throw new CliCommandError(error instanceof Error ? error.message : 'Invalid unified diff.', 1);
+  }
+
+  const validation = validateDiff(diff, policy, repoRoot);
+  if (!validation.valid) {
+    throw new CliCommandError(validation.errors.join(' '), 1);
+  }
+
+  const applyResult = await applyDiff(diff, repoRoot);
+  if (!applyResult.success || !applyResult.metadata) {
+    throw new CliCommandError(applyResult.error ?? 'Patch application failed.', 1);
+  }
+
+  await runtime.sessionStore?.appendEvent('patch_applied', {
+    patchPath: pendingPatchPath,
+    filesChanged: applyResult.filesChanged,
+    dryRun: false,
+  });
+
+  const record = await recordAppliedPatch(repoRoot, pendingPatchPath, applyResult.metadata);
+  await rm(pendingPatchPath, { force: true });
+
+  return {
+    filesChanged: applyResult.filesChanged,
+    appliedAt: record.appliedAt,
+  };
+}
+
+async function executeAllowlistedCommand(
+  runtime: CliRuntime,
+  repoRoot: string,
+  policy: Awaited<ReturnType<typeof loadAgentPolicy>>,
+  commandToRun: string,
+  options: ConfirmationOptions,
+  timeoutMs = 120_000
+): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  truncated: boolean;
+}> {
+  await runtime.sessionStore?.appendEvent('command_started', {
+    command: commandToRun,
+    argv: commandToRun.split(' '),
+    cwd: repoRoot,
+  });
+
+  const decision = requirePolicyApproval(policy, repoRoot, {
+    kind: 'command',
+    command: commandToRun,
+  });
+
+  await requireInteractiveConfirmation(
+    runtime,
+    options,
+    decision.requiresConfirmation,
+    async () => confirmCommand(runtime.io, commandToRun),
+    `running "${commandToRun}"`
+  );
+
+  const runner = new RunCommandTool({
+    repoRoot,
+    policy,
+    defaultTimeoutMs: timeoutMs,
+    maxOutputBytes: 128 * 1024,
+  });
+  const result = await runner.execute({
+    command: commandToRun,
+    timeout: timeoutMs,
+  });
+  if (!result.success || !result.data) {
+    throw new CliCommandError(result.error ?? 'Command execution failed.');
+  }
+
+  const summary = [
+    `exit=${result.data.exitCode}`,
+    `timedOut=${result.data.timedOut}`,
+    `truncated=${result.data.truncated}`,
+  ].join(' ');
+
+  await runtime.sessionStore?.appendEvent('command_output', {
+    stream: 'system',
+    message: `Command result for "${commandToRun}": ${summary}`,
+  });
+
+  if (result.data.stdout.trim().length > 0) {
+    await runtime.sessionStore?.appendEvent('command_output', {
+      stream: 'stdout',
+      message: result.data.stdout.slice(0, 2_000),
+    });
+  }
+  if (result.data.stderr.trim().length > 0) {
+    await runtime.sessionStore?.appendEvent('command_output', {
+      stream: 'stderr',
+      message: result.data.stderr.slice(0, 2_000),
+    });
+  }
+
+  return result.data;
 }
 
 export async function handleInit(cwd: string): Promise<CommandResult> {
@@ -85,7 +243,7 @@ export async function handleInit(cwd: string): Promise<CommandResult> {
 export async function handleAsk(
   runtime: CliRuntime,
   task: string,
-  options: { dryRun?: boolean; noApply?: boolean }
+  options: { autopilot?: boolean; dryRun?: boolean; noApply?: boolean; yes?: boolean }
 ): Promise<CommandResult> {
   const repoRoot = resolveRepoRoot(runtime.cwd);
   if (!repoRoot) {
@@ -135,6 +293,7 @@ export async function handleAsk(
   }
 
   const output = runResult.output;
+  const autopilotEnabled = Boolean(options.autopilot && !options.noApply);
 
   let queuedPatchPath: string | null = null;
   if (output.patch && output.patch.trim().length > 0) {
@@ -149,13 +308,141 @@ export async function handleAsk(
     if (!validation.valid) {
       throw new CliCommandError(validation.errors.join(' '));
     }
+    queuedPatchPath = await queuePatch(repoRoot, output.patch);
+  }
 
-    const { lastPatchPath } = getAgentPaths(repoRoot);
-    await writeFile(lastPatchPath, `${output.patch.trimEnd()}\n`, 'utf8');
-    await writeAgentState(repoRoot, {
-      lastProposedPatchPath: lastPatchPath,
-    });
-    queuedPatchPath = lastPatchPath;
+  const commandToRun = discoverTestCommand(repoRoot, policy);
+  if (autopilotEnabled && output.patch && queuedPatchPath && !options.dryRun) {
+    let latestPlan = output.plan;
+    let latestPatchPath = queuedPatchPath;
+    let latestPatch = output.patch;
+    let lastTestResult: Awaited<ReturnType<typeof executeAllowlistedCommand>> | null = null;
+    const testCommand = commandToRun;
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      await applyQueuedPatch(runtime, repoRoot, policy, latestPatchPath, options);
+
+      if (!testCommand) {
+        return {
+          ok: true,
+          message: 'Autopilot applied patch, but no allowlisted test command was discovered.',
+          data: {
+            task,
+            repoRoot,
+            model: modelConfig.model,
+            plan: latestPlan,
+            attemptedAutopilot: true,
+            applied: true,
+            testCommand: null,
+          },
+          human: [
+            `Task: ${task}`,
+            `Model: ${modelConfig.model}`,
+            `Plan: ${latestPlan}`,
+            'Autopilot applied the patch.',
+            'No allowlisted test command was discovered.',
+          ],
+        };
+      }
+
+      const testResult = await executeAllowlistedCommand(
+        runtime,
+        repoRoot,
+        policy,
+        testCommand,
+        options
+      );
+      lastTestResult = testResult;
+
+      if (testResult.exitCode === 0 && !testResult.timedOut) {
+        return {
+          ok: true,
+          message: 'Autopilot applied patch and tests passed.',
+          data: {
+            task,
+            repoRoot,
+            model: modelConfig.model,
+            plan: latestPlan,
+            attemptedAutopilot: true,
+            applied: true,
+            testCommand: testCommand,
+            testExitCode: testResult.exitCode,
+            timedOut: testResult.timedOut,
+          },
+          human: [
+            `Task: ${task}`,
+            `Model: ${modelConfig.model}`,
+            `Plan: ${latestPlan}`,
+            'Autopilot applied the patch.',
+            `Test command: ${testCommand}`,
+            `Test exit code: ${testResult.exitCode}`,
+          ],
+        };
+      }
+
+      if (attempt === 2) {
+        break;
+      }
+
+      const followupTask = `${task}
+
+Previous attempt failed tests using:
+${testCommand}
+
+Exit code: ${testResult.exitCode}
+Timed out: ${testResult.timedOut}
+STDOUT:
+${testResult.stdout.slice(0, 2_000)}
+STDERR:
+${testResult.stderr.slice(0, 2_000)}
+
+Provide a minimal corrective patch.`;
+
+      const followupRun = await runner.run({
+        task: followupTask,
+        repoRoot,
+        llmOptions: {
+          temperature: modelConfig.temperature,
+          contextLimit: modelConfig.contextLimit,
+        },
+      });
+      if (!followupRun.output.patch || followupRun.output.patch.trim().length === 0) {
+        throw new CliCommandError(
+          'Autopilot fix iteration did not return a patch. Stopping with current diff.',
+          1,
+          {
+            attempt,
+            testCommand,
+            testExitCode: testResult.exitCode,
+          }
+        );
+      }
+
+      const followupDiff = parseUnifiedDiff(followupRun.output.patch);
+      const followupValidation = validateDiff(followupDiff, policy, repoRoot);
+      if (!followupValidation.valid) {
+        throw new CliCommandError(followupValidation.errors.join(' '), 1, {
+          attempt,
+          testCommand,
+        });
+      }
+
+      latestPlan = followupRun.output.plan;
+      latestPatch = followupRun.output.patch;
+      latestPatchPath = await queuePatch(repoRoot, latestPatch);
+    }
+
+    throw new CliCommandError(
+      'Autopilot stopped after two failing test runs. Latest diff remains applied for inspection.',
+      1,
+      {
+        task,
+        repoRoot,
+        testCommand,
+        testExitCode: lastTestResult?.exitCode ?? null,
+        timedOut: lastTestResult?.timedOut ?? null,
+      }
+    );
   }
 
   return {
@@ -171,6 +458,7 @@ export async function handleAsk(
       toolCalls: output.tool_calls,
       context: runResult.context,
       proposedPatchFileCount: runResult.proposedPatchFileCount,
+      autopilot: autopilotEnabled,
       dryRun: options.dryRun ?? false,
       noApply: options.noApply ?? false,
       queuedPatchPath,
@@ -180,6 +468,7 @@ export async function handleAsk(
       `Model: ${modelConfig.model}`,
       `Plan: ${output.plan}`,
       `Patch: ${queuedPatchPath ? queuedPatchPath : 'none'}`,
+      `Autopilot: ${autopilotEnabled ? 'enabled' : 'disabled'}`,
       `Suggested commands: ${output.commands.length > 0 ? output.commands.join('; ') : 'none'}`,
     ],
   };
@@ -344,7 +633,7 @@ export async function handleTest(
   }
 
   const policy = await loadAgentPolicy(repoRoot);
-  const selectedCommand = pickAllowedTestCommand(policy);
+  const selectedCommand = discoverTestCommand(repoRoot, policy);
 
   if (!selectedCommand) {
     throw new CliCommandError(
@@ -353,41 +642,49 @@ export async function handleTest(
   }
 
   const commandToRun = selectedCommand;
-  await runtime.sessionStore?.appendEvent('command_started', {
-    command: commandToRun,
-    argv: commandToRun.split(' '),
-    cwd: repoRoot,
-  });
-  const decision = requirePolicyApproval(policy, repoRoot, {
-    kind: 'command',
-    command: commandToRun,
-  });
-
-  await requireInteractiveConfirmation(
+  const execution = await executeAllowlistedCommand(
     runtime,
-    options,
-    decision.requiresConfirmation,
-    async () => confirmCommand(runtime.io, commandToRun),
-    `running "${commandToRun}"`
+    repoRoot,
+    policy,
+    commandToRun,
+    options
   );
+  const timedOutSuffix = execution.timedOut ? ' (timed out)' : '';
+  const truncatedSuffix = execution.truncated ? ' (output truncated)' : '';
 
-  await runtime.sessionStore?.appendEvent('command_output', {
-    stream: 'system',
-    message: 'Command execution is deferred until Milestone 7 after policy checks succeed.',
-  });
+  if (execution.exitCode !== 0 || execution.timedOut) {
+    throw new CliCommandError(
+      `Test command failed with exit code ${execution.exitCode}${timedOutSuffix}${truncatedSuffix}.`,
+      1,
+      {
+        repoRoot,
+        command: commandToRun,
+        exitCode: execution.exitCode,
+        timedOut: execution.timedOut,
+        truncated: execution.truncated,
+        stdout: execution.stdout,
+        stderr: execution.stderr,
+      }
+    );
+  }
 
   return {
     ok: true,
-    message: 'Policy checks passed. Command execution arrives in Milestone 7.',
+    message: `Test command completed successfully${truncatedSuffix}.`,
     data: {
       repoRoot,
       command: commandToRun,
-      confirmed: !policy.safeMode.confirmCommands || options.yes || runtime.io.isInteractive,
+      exitCode: execution.exitCode,
+      timedOut: execution.timedOut,
+      truncated: execution.truncated,
+      stdout: execution.stdout,
+      stderr: execution.stderr,
     },
     human: [
-      'Policy checks passed.',
       `Selected test command: ${commandToRun}`,
-      'Command execution arrives in Milestone 7.',
+      `Exit code: ${execution.exitCode}`,
+      `Timed out: ${execution.timedOut ? 'yes' : 'no'}`,
+      `Output truncated: ${execution.truncated ? 'yes' : 'no'}`,
     ],
   };
 }

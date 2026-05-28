@@ -382,7 +382,7 @@ describe('CLI commands', () => {
   it('requires explicit confirmation for allowlisted test commands in non-interactive mode', async () => {
     const cwd = await createTempRepo();
     await initializeRepo(cwd);
-    await writePolicy(cwd, { commandAllowlist: ['npm test'] });
+    await writePolicy(cwd, { commandAllowlist: ['node --version'] });
     await writeState(cwd, {
       lastProposedPatchPath: null,
       lastAppliedPatchPath: null,
@@ -397,7 +397,7 @@ describe('CLI commands', () => {
   it('allows non-interactive test routing when --yes is explicit', async () => {
     const cwd = await createTempRepo();
     await initializeRepo(cwd);
-    await writePolicy(cwd, { commandAllowlist: ['npm test'] });
+    await writePolicy(cwd, { commandAllowlist: ['node --version'] });
     await writeState(cwd, {
       lastProposedPatchPath: null,
       lastAppliedPatchPath: null,
@@ -406,7 +406,8 @@ describe('CLI commands', () => {
     const runtime = await parseCommand(['test', '--yes'], cwd);
 
     expect(runtime.exitCode).toBe(0);
-    expect(runtime.stdout.join('\n')).toContain('Selected test command: npm test');
+    expect(runtime.stdout.join('\n')).toContain('Selected test command: node --version');
+    expect(runtime.stdout.join('\n')).toContain('Exit code: 0');
   });
 
   it('reports --no-apply intent in ask output', async () => {
@@ -480,6 +481,72 @@ describe('CLI commands', () => {
     );
     const validation = validateDiff(diff, policy, cwd);
     expect(validation.valid).toBe(true);
+  });
+
+  it('supports autopilot ask mode with apply + test in a single command', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.endsWith('/api/tags')) {
+          return new Response(JSON.stringify({ models: [{ name: 'qwen2.5-coder:14b' }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+
+        if (url.endsWith('/api/chat')) {
+          return new Response(
+            JSON.stringify({
+              message: {
+                content: JSON.stringify({
+                  plan: 'Edit readme',
+                  patch: [
+                    '--- a/README.md',
+                    '+++ b/README.md',
+                    '@@ -1,1 +1,1 @@',
+                    '-before',
+                    '+after',
+                    '',
+                  ].join('\n'),
+                  commands: [],
+                  done: true,
+                  tool_calls: [],
+                }),
+              },
+              done_reason: 'stop',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          );
+        }
+
+        return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
+      })
+    );
+
+    const cwd = await createTempRepo();
+    await initializeRepo(cwd);
+    await writeFile(path.join(cwd, 'README.md'), 'before\n', 'utf8');
+    await writePolicy(
+      cwd,
+      {
+        commandAllowlist: ['node --version'],
+      },
+      {
+        confirmApply: false,
+        confirmCommands: false,
+      }
+    );
+    await writeState(cwd, {
+      lastProposedPatchPath: null,
+      lastAppliedPatchPath: null,
+    });
+
+    const runtime = await parseCommand(['ask', 'edit readme', '--autopilot'], cwd);
+    expect(runtime.exitCode).toBe(0);
+    expect(runtime.stdout.join('\n')).toContain('Autopilot applied the patch.');
+    expect(runtime.stdout.join('\n')).toContain('Test command: node --version');
+    expect(await readFile(path.join(cwd, 'README.md'), 'utf8')).toBe('after\n');
   });
 
   it('rejects ask output when patch section contains prose before unified diff', async () => {

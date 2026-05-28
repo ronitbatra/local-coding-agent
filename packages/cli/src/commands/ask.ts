@@ -11,8 +11,10 @@ import { handleAsk } from './shared.js';
 
 interface AskOptions {
   apply?: boolean;
+  autopilot?: boolean;
   dryRun?: boolean;
   noApply?: boolean;
+  yes?: boolean;
   json?: boolean;
 }
 
@@ -23,6 +25,8 @@ export function createAskCommand(runtime: CliRuntime): Command {
       .argument('<task>', 'The task to perform')
       .option('--dry-run', 'Preview changes without applying')
       .option('--no-apply', 'Do not apply patches automatically')
+      .option('--autopilot', 'Apply proposed patches and run tests in a short fix loop')
+      .option('--yes', 'Skip confirmation prompts in autopilot mode')
       .action(async (task: string, options: AskOptions, command: Command): Promise<void> => {
         return createActionHandler(runtime, async (innerOptions: AskOptions) => {
           return handleAsk(runtime, task, {
