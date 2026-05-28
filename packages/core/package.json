@@ -5,8 +5,12 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
+    "prepack": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "biome check .",

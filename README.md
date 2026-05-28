@@ -70,9 +70,29 @@ npm run build
 - `npm run smoke` - Run smoke tests
 - `npm run dev` - Run CLI in development mode
 
+### Distribution
+
+Build installable package tarballs:
+
+```bash
+npm run package:all
+```
+
+Install tarballs globally (after packaging):
+
+```bash
+npm install -g ./dist-packages/local-agent-core-0.1.0.tgz ./dist-packages/local-agent-cli-0.1.0.tgz
+```
+
+Run diagnostics after install:
+
+```bash
+agent doctor
+```
+
 ## Milestones
 
-See [tasks.md](tasks.md) for the complete milestone breakdown. Currently working on **Milestone 2** (Policy + Safety Guardrails).
+See [tasks.md](tasks.md) for the complete milestone breakdown. Current implementation is through **Milestone 9**.
 
 ## License
 
