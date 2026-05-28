@@ -13,7 +13,9 @@ interface AskOptions {
   apply?: boolean;
   autopilot?: boolean;
   dryRun?: boolean;
+  explainPatch?: boolean;
   noApply?: boolean;
+  plain?: boolean;
   yes?: boolean;
   json?: boolean;
 }
@@ -24,6 +26,8 @@ export function createAskCommand(runtime: CliRuntime): Command {
       .description('Ask the agent to perform a coding task')
       .argument('<task>', 'The task to perform')
       .option('--dry-run', 'Preview changes without applying')
+      .option('--plain', 'Disable ANSI colors in diff preview output')
+      .option('--explain-patch', 'Explain the proposed patch using the local model')
       .option('--no-apply', 'Do not apply patches automatically')
       .option('--autopilot', 'Apply proposed patches and run tests in a short fix loop')
       .option('--yes', 'Skip confirmation prompts in autopilot mode')

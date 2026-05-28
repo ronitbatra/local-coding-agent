@@ -27,12 +27,15 @@ import type { CommandResult } from '../lib/output.js';
 import { discoverTestCommand, loadAgentPolicy, requirePolicyApproval } from '../lib/policy.js';
 import type { CliRuntime } from '../lib/runtime.js';
 import { readSessionById } from '../lib/session.js';
+import { formatDiff } from '../ui/diffView.js';
 import { confirmApply, confirmCommand } from '../ui/prompts.js';
 
 interface ConfirmationOptions {
   autopilot?: boolean;
   dryRun?: boolean;
+  explainPatch?: boolean;
   noApply?: boolean;
+  plain?: boolean;
   yes?: boolean;
 }
 
@@ -233,6 +236,7 @@ export async function handleInit(cwd: string): Promise<CommandResult> {
     human: [
       `Initialized agent configuration in ${paths.agentDir}`,
       `Policy: ${paths.policyPath}`,
+      'Telemetry: disabled by default',
       `Model config: ${paths.modelPath}`,
       `Sessions: ${paths.sessionsDir}`,
       `Patches: ${paths.patchesDir}`,
@@ -243,7 +247,14 @@ export async function handleInit(cwd: string): Promise<CommandResult> {
 export async function handleAsk(
   runtime: CliRuntime,
   task: string,
-  options: { autopilot?: boolean; dryRun?: boolean; noApply?: boolean; yes?: boolean }
+  options: {
+    autopilot?: boolean;
+    dryRun?: boolean;
+    explainPatch?: boolean;
+    noApply?: boolean;
+    plain?: boolean;
+    yes?: boolean;
+  }
 ): Promise<CommandResult> {
   const repoRoot = resolveRepoRoot(runtime.cwd);
   if (!repoRoot) {
@@ -308,7 +319,27 @@ export async function handleAsk(
     if (!validation.valid) {
       throw new CliCommandError(validation.errors.join(' '));
     }
-    queuedPatchPath = await queuePatch(repoRoot, output.patch);
+    if (!options.dryRun) {
+      queuedPatchPath = await queuePatch(repoRoot, output.patch);
+    }
+  }
+
+  let patchExplanation: string | null = null;
+  if (options.explainPatch && output.patch) {
+    try {
+      const explanation = await adapter.complete(
+        `Explain this unified diff in concise bullet points, including risk notes:\n\n${output.patch}`,
+        {
+          temperature: 0.2,
+          contextLimit: modelConfig.contextLimit,
+        }
+      );
+      patchExplanation = explanation.content.trim();
+    } catch (error) {
+      patchExplanation = `Unable to explain patch: ${
+        error instanceof Error ? error.message : 'unknown error'
+      }`;
+    }
   }
 
   const commandToRun = discoverTestCommand(repoRoot, policy);
@@ -462,6 +493,7 @@ Provide a minimal corrective patch.`;
       dryRun: options.dryRun ?? false,
       noApply: options.noApply ?? false,
       queuedPatchPath,
+      patchExplanation,
     },
     human: [
       `Task: ${task}`,
@@ -470,6 +502,10 @@ Provide a minimal corrective patch.`;
       `Patch: ${queuedPatchPath ? queuedPatchPath : 'none'}`,
       `Autopilot: ${autopilotEnabled ? 'enabled' : 'disabled'}`,
       `Suggested commands: ${output.commands.length > 0 ? output.commands.join('; ') : 'none'}`,
+      ...(output.patch
+        ? ['Diff preview:', ...formatDiff(output.patch, options.plain ?? false)]
+        : []),
+      ...(patchExplanation ? ['Patch explanation:', patchExplanation] : []),
     ],
   };
 }
@@ -508,19 +544,21 @@ export async function handleApply(
     });
   }
 
-  const decision = requirePolicyApproval(policy, repoRoot, {
-    kind: 'apply',
-    targetPath: pendingPatchPath,
-    patchSize: pendingPatchStat?.size,
-  });
+  if (!options.dryRun) {
+    const decision = requirePolicyApproval(policy, repoRoot, {
+      kind: 'apply',
+      targetPath: pendingPatchPath,
+      patchSize: pendingPatchStat?.size,
+    });
 
-  await requireInteractiveConfirmation(
-    runtime,
-    options,
-    decision.requiresConfirmation,
-    async () => confirmApply(runtime.io, [path.basename(pendingPatchPath)]),
-    'applying the pending patch'
-  );
+    await requireInteractiveConfirmation(
+      runtime,
+      options,
+      decision.requiresConfirmation,
+      async () => confirmApply(runtime.io, [path.basename(pendingPatchPath)]),
+      'applying the pending patch'
+    );
+  }
 
   let diffText: string;
 
@@ -547,6 +585,23 @@ export async function handleApply(
   const validation = validateDiff(diff, policy, repoRoot);
   if (!validation.valid) {
     throw new CliCommandError(validation.errors.join(' '), 1);
+  }
+
+  if (options.dryRun) {
+    return {
+      ok: true,
+      message: `Dry-run succeeded. Patch touching ${diff.files.length} file(s) passed validation.`,
+      data: {
+        repoRoot,
+        dryRun: true,
+        filesChanged: diff.files.map((file) => file.path),
+      },
+      human: [
+        `Dry-run succeeded. Patch touching ${diff.files.length} file(s) passed validation.`,
+        'Diff preview:',
+        ...formatDiff(diffText, options.plain ?? false),
+      ],
+    };
   }
 
   const applyResult = await applyDiff(diff, repoRoot);
@@ -604,6 +659,7 @@ export async function handleStatus(runtime: CliRuntime): Promise<CommandResult> 
       `Initialized: ${status.initialized ? 'yes' : 'no'}`,
       `Agent dir: ${status.agentDir}`,
       `Policy file: ${status.policyExists ? 'present' : 'missing'}`,
+      'Telemetry: off',
       `Model file: ${status.modelExists ? 'present' : 'missing'}`,
       `Sessions dir: ${status.sessionsDirExists ? 'present' : 'missing'}`,
       `Patches dir: ${status.patchesDirExists ? 'present' : 'missing'}`,
@@ -711,9 +767,13 @@ export async function handleUndo(cwd: string): Promise<CommandResult> {
 
   return {
     ok: true,
-    message: 'Rolled back the last applied patch.',
+    message: 'Rolled back the last applied patch and cleared rollback state.',
     data: { repoRoot, patchPath: record.patchPath },
-    human: ['Rolled back the last applied patch.', `Patch: ${record.patchPath}`],
+    human: [
+      'Rollback complete: last applied patch was reverted.',
+      `Reverted patch: ${record.patchPath}`,
+      'Rollback metadata and applied patch pointers were cleared.',
+    ],
   };
 }
 

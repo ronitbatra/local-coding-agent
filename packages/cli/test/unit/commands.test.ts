@@ -237,6 +237,7 @@ describe('CLI commands', () => {
       Initialized: yes
       Agent dir: TMP_DIR/.agent
       Policy file: present
+      Telemetry: off
       Model file: present
       Sessions dir: present
       Patches dir: present
@@ -345,6 +346,32 @@ describe('CLI commands', () => {
     expect(state.lastAppliedPatchPath).toContain('last-applied.patch');
   });
 
+  it('supports apply --dry-run without mutating files or state', async () => {
+    const cwd = await createTempRepo();
+    await initializeRepo(cwd);
+    await writePolicy(cwd, {}, { confirmApply: true, readOnly: true });
+    await writeFile(path.join(cwd, 'README.md'), 'before\n', 'utf8');
+    const patchPath = path.join(cwd, '.agent', 'patches', 'last-proposed.patch');
+    await writeFile(
+      patchPath,
+      ['--- a/README.md', '+++ b/README.md', '@@ -1,1 +1,1 @@', '-before', '+after', ''].join('\n'),
+      'utf8'
+    );
+    await writeState(cwd, {
+      lastProposedPatchPath: patchPath,
+      lastAppliedPatchPath: null,
+    });
+
+    const runtime = await parseCommand(['apply', '--dry-run', '--plain'], cwd);
+
+    expect(runtime.exitCode).toBe(0);
+    expect(await readFile(path.join(cwd, 'README.md'), 'utf8')).toBe('before\n');
+    const state = JSON.parse(await readFile(path.join(cwd, '.agent', 'state.json'), 'utf8'));
+    expect(state.lastProposedPatchPath).toBe(patchPath);
+    expect(runtime.stdout.join('\n')).toContain('Dry-run succeeded.');
+    expect(runtime.stdout.join('\n')).not.toContain('\u001B[');
+  });
+
   it('undoes the last applied patch and restores the previous content', async () => {
     const cwd = await createTempRepo();
     await initializeRepo(cwd);
@@ -366,7 +393,9 @@ describe('CLI commands', () => {
 
     expect(runtime.exitCode).toBe(0);
     expect(await readFile(path.join(cwd, 'README.md'), 'utf8')).toBe('before\n');
-    expect(runtime.stdout.join('\n')).toContain('Rolled back the last applied patch.');
+    expect(runtime.stdout.join('\n')).toContain(
+      'Rollback complete: last applied patch was reverted.'
+    );
   });
 
   it('denies test command execution when nothing is allowlisted', async () => {
@@ -419,6 +448,7 @@ describe('CLI commands', () => {
     expect(runtime.exitCode).toBe(0);
     expect(runtime.stdout.join('\n')).toContain('Task: update docs');
     expect(runtime.stdout.join('\n')).toContain('Plan: Update docs');
+    expect(runtime.stdout.join('\n')).toContain('Autopilot: disabled');
   });
 
   it('queues a proposed patch when model returns one', async () => {

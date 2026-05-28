@@ -25,7 +25,14 @@ export async function confirmApply(io: CliIO, filesChanged: string[]): Promise<b
       ? `${filesChanged.length} file(s): ${filesChanged.join(', ')}`
       : '1 patch';
 
-  return confirm(io, `Apply pending patch affecting ${summary}?`);
+  const riskSummary =
+    filesChanged.length > 10
+      ? 'high risk: many files changed'
+      : filesChanged.length > 3
+        ? 'medium risk: multiple files changed'
+        : 'low risk: limited file changes';
+
+  return confirm(io, `Apply pending patch affecting ${summary}? Risk summary: ${riskSummary}.`);
 }
 
 export async function confirmCommand(io: CliIO, command: string): Promise<boolean> {
