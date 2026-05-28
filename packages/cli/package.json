@@ -7,8 +7,12 @@
     "agent": "./dist/main.js"
   },
   "main": "./dist/main.js",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
+    "prepack": "npm run build",
     "dev": "tsx src/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",

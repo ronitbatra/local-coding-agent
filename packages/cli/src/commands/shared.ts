@@ -22,6 +22,7 @@ import {
   writeAgentState,
 } from '../lib/agentFs.js';
 import { CliCommandError } from '../lib/commandHelpers.js';
+import { formatDoctorReport, runDoctorChecks } from '../lib/doctor.js';
 import { loadModelConfig } from '../lib/model.js';
 import type { CommandResult } from '../lib/output.js';
 import { discoverTestCommand, loadAgentPolicy, requirePolicyApproval } from '../lib/policy.js';
@@ -800,11 +801,18 @@ export async function handleReplay(cwd: string, sessionId: string): Promise<Comm
 }
 
 export async function handleDoctor(cwd: string): Promise<CommandResult> {
-  const repoRoot = resolveRepoRoot(cwd) ?? path.resolve(cwd);
+  const report = await runDoctorChecks(cwd);
+  const lines = formatDoctorReport(report);
+  const summary = `Doctor checks ${report.ok ? 'passed' : 'failed'} (${report.passed} passed, ${report.warnings} warnings, ${report.failed} failed).`;
+
+  if (!report.ok) {
+    throw new CliCommandError([summary, ...lines].join('\n'), 1, report);
+  }
 
   return {
     ok: true,
-    message: 'Doctor command routing is wired. Full environment checks arrive in Milestone 9.',
-    data: { repoRoot },
+    message: summary,
+    data: report,
+    human: [summary, ...lines],
   };
 }
