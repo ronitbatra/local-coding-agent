@@ -28,6 +28,7 @@ export * from './tools/patch/parseUnifiedDiff.js';
 export * from './tools/patch/rollback.js';
 export * from './tools/patch/validateDiff.js';
 export * from './tools/search/ripgrep.js';
+export * from './tools/shell/runCommand.js';
 export * from './tools/Tool.js';
 export * from './util/errors.js';
 export * from './util/logger.js';
