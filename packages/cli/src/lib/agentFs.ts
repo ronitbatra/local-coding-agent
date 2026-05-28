@@ -1,7 +1,12 @@
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { DEFAULT_POLICY, type PatchApplicationMetadata, SessionStore } from '@local-agent/core';
+import {
+  DEFAULT_MODEL_CONFIG,
+  DEFAULT_POLICY,
+  type PatchApplicationMetadata,
+  SessionStore,
+} from '@local-agent/core';
 
 const AGENT_DIRNAME = '.agent';
 const POLICY_FILENAME = 'policy.json';

@@ -146,3 +146,22 @@ Executed in order from a clean install:
 - `npm run smoke`
 
 Result: all steps pass locally using the same command sequence as CI.
+
+### Additional CI fix: `DEFAULT_MODEL_CONFIG` compile error
+
+CI failure observed:
+
+- `packages/cli/src/lib/agentFs.ts(154,14): error TS2304: Cannot find name 'DEFAULT_MODEL_CONFIG'.`
+
+Root cause:
+
+- `initializeAgent()` was updated to scaffold `.agent/model.json` using `DEFAULT_MODEL_CONFIG`, but the symbol was not imported from `@local-agent/core` in `agentFs.ts`.
+
+Fix:
+
+- Added `DEFAULT_MODEL_CONFIG` to the import list in [agentFs.ts](/Users/sampark/Desktop/CS/Projects/local-coding-agent/packages/cli/src/lib/agentFs.ts).
+
+Verification:
+
+- `npm run build` passes
+- `npm run lint` passes
