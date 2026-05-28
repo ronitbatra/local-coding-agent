@@ -2,7 +2,7 @@
  * CLI commands unit tests
  */
 
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -100,6 +100,14 @@ async function parseCommand(args: string[], cwd: string): Promise<BufferedRuntim
   return runtime;
 }
 
+async function listSessionIds(cwd: string): Promise<string[]> {
+  const entries = await readdir(path.join(cwd, '.agent', 'sessions'));
+  return entries
+    .filter((entry) => entry.endsWith('.meta.json'))
+    .map((entry) => entry.replace(/\.meta\.json$/, ''))
+    .sort();
+}
+
 describe('CLI commands', () => {
   beforeEach(() => {
     vi.stubGlobal(
@@ -154,6 +162,7 @@ describe('CLI commands', () => {
       'test',
       'undo',
       'status',
+      'replay',
       'doctor',
     ]);
   });
@@ -169,6 +178,9 @@ describe('CLI commands', () => {
     await expect(parseCommand(['test'], cwd)).resolves.toMatchObject({ exitCode: 1 });
     await expect(parseCommand(['undo'], cwd)).resolves.toMatchObject({ exitCode: 1 });
     await expect(parseCommand(['status', '--json'], cwd)).resolves.toMatchObject({ exitCode: 0 });
+    await expect(parseCommand(['replay', 'missing-session'], cwd)).resolves.toMatchObject({
+      exitCode: 1,
+    });
     await expect(parseCommand(['doctor'], cwd)).resolves.toMatchObject({ exitCode: 0 });
   });
 
@@ -190,18 +202,21 @@ describe('CLI commands', () => {
       Local coding agent - CLI-first assistant
 
       Options:
-        -V, --version         output the version number
-        -h, --help            display help for command
+        -V, --version               output the version number
+        -h, --help                  display help for command
 
       Commands:
-        init [options]        Initialize agent configuration in current repository
-        ask [options] <task>  Ask the agent to perform a coding task
-        apply [options]       Apply the last proposed patch
-        test [options]        Run allowlisted test commands
-        undo [options]        Rollback the last applied patch
-        status [options]      Show agent status and last run summary
-        doctor [options]      Check system requirements (git, ripgrep, ollama, etc.)
-        help [command]        display help for command
+        init [options]              Initialize agent configuration in current
+                                    repository
+        ask [options] <task>        Ask the agent to perform a coding task
+        apply [options]             Apply the last proposed patch
+        test [options]              Run allowlisted test commands
+        undo [options]              Rollback the last applied patch
+        status [options]            Show agent status and last run summary
+        replay [options] <session>  Replay a stored session log
+        doctor [options]            Check system requirements (git, ripgrep, ollama,
+                                    etc.)
+        help [command]              display help for command
       "
     `);
   });
@@ -210,7 +225,10 @@ describe('CLI commands', () => {
     const cwd = await createTempRepo();
     await parseCommand(['init'], cwd);
     const runtime = await parseCommand(['status'], cwd);
-    const normalizedOutput = runtime.stdout.join('\n').replaceAll(cwd, 'TMP_DIR');
+    const normalizedOutput = runtime.stdout
+      .join('\n')
+      .replaceAll(cwd, 'TMP_DIR')
+      .replace(/Last session: .+/u, 'Last session: SESSION_ID');
 
     expect(normalizedOutput).toMatchInlineSnapshot(`
       "Agent Status
@@ -222,7 +240,12 @@ describe('CLI commands', () => {
       Sessions dir: present
       Patches dir: present
       Pending patch: none
-      Last applied patch: none"
+      Last applied patch: none
+      Last session: SESSION_ID
+      Last command: init
+      Last result: completed
+      Last summary: Initialized agent configuration in TMP_DIR/.agent
+      Last events: 3"
     `);
   });
 
@@ -445,5 +468,44 @@ describe('CLI commands', () => {
 
     const state = JSON.parse(await readFile(path.join(cwd, '.agent', 'state.json'), 'utf8'));
     expect(state.lastProposedPatchPath).toContain('.agent/patches/last-proposed.patch');
+  });
+
+  it('writes a session log for successful commands and replays it in order', async () => {
+    const cwd = await createTempRepo();
+    await parseCommand(['init'], cwd);
+
+    const sessionIds = await listSessionIds(cwd);
+    expect(sessionIds.length).toBeGreaterThan(0);
+
+    const replayRuntime = await parseCommand(['replay', sessionIds[0]], cwd);
+    expect(replayRuntime.exitCode).toBe(0);
+    expect(replayRuntime.stdout.join('\n')).toContain('Command: init');
+    expect(replayRuntime.stdout.join('\n')).toContain('#1 command_started');
+    expect(replayRuntime.stdout.join('\n')).toContain('#2 command_output');
+    expect(replayRuntime.stdout.join('\n')).toContain('#3 done');
+  });
+
+  it('records patch lifecycle events for apply', async () => {
+    const cwd = await createTempRepo();
+    await initializeRepo(cwd);
+    await writePolicy(cwd, {}, { confirmApply: false });
+    await writeFile(path.join(cwd, 'README.md'), 'before\n', 'utf8');
+    const patchPath = path.join(cwd, '.agent', 'patches', 'last-proposed.patch');
+    await writeFile(
+      patchPath,
+      ['--- a/README.md', '+++ b/README.md', '@@ -1,1 +1,1 @@', '-before', '+after', ''].join('\n'),
+      'utf8'
+    );
+    await writeState(cwd, {
+      lastProposedPatchPath: patchPath,
+      lastAppliedPatchPath: null,
+    });
+
+    await parseCommand(['apply'], cwd);
+    const sessionIds = await listSessionIds(cwd);
+    const replayRuntime = await parseCommand(['replay', sessionIds[0]], cwd);
+
+    expect(replayRuntime.stdout.join('\n')).toContain('patch_proposed');
+    expect(replayRuntime.stdout.join('\n')).toContain('patch_applied');
   });
 });
