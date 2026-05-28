@@ -112,3 +112,37 @@ Passed:
 Notes:
 
 - the existing Commander invalid-args test still emits `missing required argument 'task'` during tests; this is expected and does not fail the suite.
+
+## CI/CD Failure Investigation and Fix (Appended)
+
+### Plan used to debug CI
+
+1. Reproduce CI locally using the exact workflow sequence from `.github/workflows/ci.yml`.
+2. Start from a clean dependency state with `npm ci`.
+3. Run each CI step independently (`build`, `lint`, `test`, `smoke`) and inspect the first failing step.
+4. Fix root cause, rerun full sequence, then document final verified state.
+
+### Problems identified during investigation
+
+- Build instability was previously observed when TypeScript picked up unintended ambient type folders (for example duplicate `@types/*` directories in warm local environments), which can surface as `TS2688` type-definition lookup errors.
+- Early Ollama contract tests that depended on creating a local HTTP server are not reliable in restricted/sandboxed execution environments.
+
+### Fixes applied
+
+- Kept explicit Node ambient type pinning in [tsconfig.json](/Users/sampark/Desktop/CS/Projects/local-coding-agent/tsconfig.json) (`"types": ["node"]`) so type resolution is deterministic.
+- Converted Ollama adapter contract tests to `fetch`-mock based tests (no local port binding required) in [ollamaAdapter.test.ts](/Users/sampark/Desktop/CS/Projects/local-coding-agent/packages/core/test/unit/ollamaAdapter.test.ts), while still validating:
+  - request shape
+  - retry behavior
+  - model-not-found error messaging
+
+### Post-fix verification against CI workflow steps
+
+Executed in order from a clean install:
+
+- `npm ci`
+- `npm run build`
+- `npm run lint`
+- `npm test`
+- `npm run smoke`
+
+Result: all steps pass locally using the same command sequence as CI.
