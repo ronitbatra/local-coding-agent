@@ -1,3 +1,5 @@
+import { parseUnifiedDiff } from '../tools/patch/parseUnifiedDiff.js';
+
 /**
  * Strict JSON / sections contract
  *
@@ -89,6 +91,35 @@ export function parseAgentOutput(text: string): AgentOutput {
     done: candidate.done,
     tool_calls: toolCalls,
   };
+}
+
+export function validatePatchOutputContract(patch: string | null): void {
+  if (patch === null) {
+    return;
+  }
+
+  const trimmed = patch.trim();
+  if (trimmed.length === 0) {
+    throw new Error('PATCH must not be an empty string.');
+  }
+
+  if (!trimmed.startsWith('--- ') && !trimmed.startsWith('diff --git ')) {
+    throw new Error('PATCH must start with a unified diff header and contain no leading prose.');
+  }
+
+  if (trimmed.includes('```')) {
+    throw new Error('PATCH must be raw unified diff text without markdown fences.');
+  }
+
+  try {
+    parseUnifiedDiff(trimmed);
+  } catch (error) {
+    throw new Error(
+      error instanceof Error
+        ? `PATCH is not valid unified diff text: ${error.message}`
+        : 'PATCH is not valid unified diff text.'
+    );
+  }
 }
 
 function stripCodeFence(input: string): string {

@@ -1,11 +1,9 @@
 import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  AgentRunner,
   applyDiff,
-  buildRunPrompt,
-  getSystemPrompt,
   OllamaAdapter,
-  parseAgentOutput,
   parseUnifiedDiff,
   rollbackLastPatch,
   validateDiff,
@@ -85,11 +83,11 @@ export async function handleInit(cwd: string): Promise<CommandResult> {
 }
 
 export async function handleAsk(
-  cwd: string,
+  runtime: CliRuntime,
   task: string,
   options: { dryRun?: boolean; noApply?: boolean }
 ): Promise<CommandResult> {
-  const repoRoot = resolveRepoRoot(cwd);
+  const repoRoot = resolveRepoRoot(runtime.cwd);
   if (!repoRoot) {
     throw new CliCommandError(
       'No repository root found. Run `agent init` from your project first.'
@@ -104,6 +102,7 @@ export async function handleAsk(
   }
 
   const modelConfig = await loadModelConfig(repoRoot);
+  const policy = await loadAgentPolicy(repoRoot);
   const adapter = OllamaAdapter.fromModelConfig(modelConfig);
   const serverAvailable = await adapter.checkServer();
   if (!serverAvailable) {
@@ -112,34 +111,45 @@ export async function handleAsk(
     );
   }
 
-  const prompt = buildRunPrompt(task, 'No additional repository context gathered yet.');
-  let outputText: string;
+  const runner = new AgentRunner({
+    llm: adapter,
+    onEvent: async (type, data) => {
+      await runtime.sessionStore?.appendEvent(type, data);
+    },
+  });
+
+  let runResult: Awaited<ReturnType<AgentRunner['run']>>;
   try {
-    const completion = await adapter.complete(prompt, {
-      systemPrompt: getSystemPrompt(),
-      temperature: modelConfig.temperature,
-      contextLimit: modelConfig.contextLimit,
+    runResult = await runner.run({
+      task,
+      repoRoot,
+      llmOptions: {
+        temperature: modelConfig.temperature,
+        contextLimit: modelConfig.contextLimit,
+      },
     });
-    outputText = completion.content;
   } catch (error) {
     throw new CliCommandError(
       error instanceof Error ? error.message : 'Ollama request failed unexpectedly.'
     );
   }
 
-  let output: ReturnType<typeof parseAgentOutput>;
-  try {
-    output = parseAgentOutput(outputText);
-  } catch (error) {
-    throw new CliCommandError(
-      error instanceof Error
-        ? `Model response did not match the strict JSON contract: ${error.message}`
-        : 'Model response did not match the strict JSON contract.'
-    );
-  }
+  const output = runResult.output;
 
   let queuedPatchPath: string | null = null;
   if (output.patch && output.patch.trim().length > 0) {
+    let diff: ReturnType<typeof parseUnifiedDiff>;
+    try {
+      diff = parseUnifiedDiff(output.patch);
+    } catch (error) {
+      throw new CliCommandError(error instanceof Error ? error.message : 'Invalid unified diff.');
+    }
+
+    const validation = validateDiff(diff, policy, repoRoot);
+    if (!validation.valid) {
+      throw new CliCommandError(validation.errors.join(' '));
+    }
+
     const { lastPatchPath } = getAgentPaths(repoRoot);
     await writeFile(lastPatchPath, `${output.patch.trimEnd()}\n`, 'utf8');
     await writeAgentState(repoRoot, {
@@ -159,6 +169,8 @@ export async function handleAsk(
       commands: output.commands,
       done: output.done,
       toolCalls: output.tool_calls,
+      context: runResult.context,
+      proposedPatchFileCount: runResult.proposedPatchFileCount,
       dryRun: options.dryRun ?? false,
       noApply: options.noApply ?? false,
       queuedPatchPath,

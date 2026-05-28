@@ -25,7 +25,7 @@ export function createAskCommand(runtime: CliRuntime): Command {
       .option('--no-apply', 'Do not apply patches automatically')
       .action(async (task: string, options: AskOptions, command: Command): Promise<void> => {
         return createActionHandler(runtime, async (innerOptions: AskOptions) => {
-          return handleAsk(runtime.cwd, task, {
+          return handleAsk(runtime, task, {
             ...innerOptions,
             noApply: innerOptions.apply === false,
           });
