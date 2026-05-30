@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { buildFailureMetadata } from './errorClassification.js';
 import type { CommandResult } from './output.js';
 import { renderCommandResult } from './output.js';
 import type { CliRuntime } from './runtime.js';
@@ -64,18 +65,23 @@ export function createActionHandler<TOptions extends JsonOption>(
         error instanceof CliCommandError
           ? error
           : new CliCommandError(error instanceof Error ? error.message : 'Unknown command failure');
+      const failure = buildFailureMetadata(commandError.message);
+      const details =
+        commandError.data && typeof commandError.data === 'object'
+          ? { ...((commandError.data as Record<string, unknown>) ?? {}), failure }
+          : { details: commandError.data ?? null, failure };
 
       await session.store.fail({
         message: commandError.message,
         exitCode: commandError.exitCode,
-        details: commandError.data,
+        details,
       });
 
       renderCommandResult(
         {
           ok: false,
           message: commandError.message,
-          data: commandError.data,
+          data: details,
         },
         options.json ?? false,
         runtime.io

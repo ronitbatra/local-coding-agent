@@ -17,6 +17,7 @@
     "clean": "npm run clean --workspaces && rm -rf node_modules tsconfig.build.tsbuildinfo",
     "dev": "npm run dev --workspace=packages/cli",
     "smoke": "npm run smoke --workspace=packages/cli",
+    "report:failures": "node scripts/failure-report.mjs",
     "package:core": "mkdir -p dist-packages && npm pack --workspace @local-agent/core --pack-destination ./dist-packages",
     "package:cli": "mkdir -p dist-packages && npm pack --workspace @local-agent/cli --pack-destination ./dist-packages",
     "package:all": "npm run package:core && npm run package:cli"
