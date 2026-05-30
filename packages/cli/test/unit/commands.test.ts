@@ -629,6 +629,53 @@ describe('CLI commands', () => {
     expect(runtime.stderr.join('\n')).toContain('leading prose');
   });
 
+  it('emits structured failure metadata for ask parsing failures in --json mode', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.endsWith('/api/tags')) {
+          return new Response(JSON.stringify({ models: [{ name: 'qwen2.5-coder:14b' }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+
+        if (url.endsWith('/api/chat')) {
+          return new Response(
+            JSON.stringify({
+              message: {
+                content: JSON.stringify({
+                  plan: 'Edit readme',
+                  patch: ['PATCH START', 'def bubble_sort(arr):', '    return arr'].join('\n'),
+                  commands: [],
+                  done: true,
+                  tool_calls: [],
+                }),
+              },
+              done_reason: 'stop',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          );
+        }
+
+        return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
+      })
+    );
+
+    const cwd = await createTempRepo();
+    await parseCommand(['init'], cwd);
+
+    const runtime = await parseCommand(['ask', 'edit readme', '--json'], cwd);
+    expect(runtime.exitCode).toBe(1);
+
+    const parsed = JSON.parse(runtime.stdout.join('\n')) as {
+      data: { failure: { category: string; classifierVersion: string } };
+    };
+    expect(parsed.data.failure.category).toBe('patch_contract_failed');
+    expect(parsed.data.failure.classifierVersion).toBe('t0');
+  });
+
   it('writes a session log for successful commands and replays it in order', async () => {
     const cwd = await createTempRepo();
     await parseCommand(['init'], cwd);
