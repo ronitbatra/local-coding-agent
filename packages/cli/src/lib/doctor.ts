@@ -1,6 +1,7 @@
 import { execFile as execFileCallback } from 'node:child_process';
 import { constants, existsSync } from 'node:fs';
 import { access } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { DEFAULT_MODEL_CONFIG, type ModelConfig, OllamaAdapter } from '@local-agent/core';
@@ -35,6 +36,7 @@ export interface DoctorDependencies {
   execBinary: (command: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
   checkAccess: (targetPath: string, mode: number) => Promise<void>;
   pathExists: (targetPath: string) => boolean;
+  getSystemMemoryBytes: () => number;
   resolveRepoRoot: (startPath: string) => string | null;
   getAgentPaths: (repoRoot: string) => DoctorAgentPaths;
   loadModelConfig: (repoRoot: string) => Promise<ModelConfig>;
@@ -45,11 +47,44 @@ const defaultDependencies: DoctorDependencies = {
   execBinary: (command: string, args: string[]) => execFile(command, args),
   checkAccess: (targetPath: string, mode: number) => access(targetPath, mode),
   pathExists: (targetPath: string) => existsSync(targetPath),
+  getSystemMemoryBytes: () => os.totalmem(),
   resolveRepoRoot,
   getAgentPaths,
   loadModelConfig,
   createAdapter: (config: ModelConfig) => OllamaAdapter.fromModelConfig(config),
 };
+
+const GIB = 1024 * 1024 * 1024;
+
+function isLikelyLargeModel(modelName: string): boolean {
+  return /(14b|32b|70b|\b[2-9]\db\b)/iu.test(modelName);
+}
+
+function addRiskWarnings(
+  checks: DoctorCheck[],
+  modelConfig: ModelConfig,
+  systemMemoryBytes: number
+): void {
+  if (isLikelyLargeModel(modelConfig.model) && modelConfig.timeoutMs < 20_000) {
+    checks.push({
+      id: 'model_timeout_profile',
+      label: 'model timeout profile',
+      status: 'warn',
+      required: false,
+      message: `Model "${modelConfig.model}" with timeoutMs=${modelConfig.timeoutMs} may cause ask/apply timeouts. Consider timeoutMs >= 20000.`,
+    });
+  }
+
+  if (systemMemoryBytes <= 16 * GIB && modelConfig.contextLimit > 8192) {
+    checks.push({
+      id: 'model_context_profile',
+      label: 'model context profile',
+      status: 'warn',
+      required: false,
+      message: `contextLimit=${modelConfig.contextLimit} on ~${Math.round(systemMemoryBytes / GIB)}GiB system memory may increase latency/instability. Consider contextLimit <= 8192.`,
+    });
+  }
+}
 
 function firstLine(text: string): string | null {
   const line = text
@@ -193,6 +228,8 @@ export async function runDoctorChecks(
       message: `No ${paths.modelPath} found. Using default model "${modelConfig.model}" for diagnostics.`,
     });
   }
+
+  addRiskWarnings(checks, modelConfig, dependencies.getSystemMemoryBytes());
 
   const adapter = dependencies.createAdapter(modelConfig);
   try {

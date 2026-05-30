@@ -50,6 +50,8 @@ export class OllamaAdapter implements LLM {
       model: config.model,
       temperature: config.temperature,
       contextLimit: config.contextLimit,
+      timeoutMs: config.timeoutMs,
+      maxRetries: config.maxRetries,
     });
   }
 
